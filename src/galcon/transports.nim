@@ -49,7 +49,8 @@ proc advancePlayback*(
     session: Session,
     elapsed: float32,
     frameStart: float64,
-    singleTick = false
+    singleTick = false,
+    holdAtEnd = false
 ): bool =
   ## Restores before synchronizing so backward seeks retain their target tick.
   let restore = transport.player.takeRestore()
@@ -57,6 +58,8 @@ proc advancePlayback*(
   if result:
     session.restoreTo(restore)
   transport.sync(session)
+  if holdAtEnd and transport.player.over:
+    return
   transport.player.startFrame(elapsed, TickRate)
   if singleTick and transport.player.playing and
     transport.player.targetTick < 0:
@@ -64,6 +67,8 @@ proc advancePlayback*(
   while transport.player.shouldTick(frameStart):
     session.step()
     transport.sync(session)
+    if holdAtEnd and transport.player.over:
+      break
 
 proc addTransportAssets*(builder: AtlasBuilder) =
   ## Adds Polyworld's CC0 transport art and the separately licensed Rubik font.

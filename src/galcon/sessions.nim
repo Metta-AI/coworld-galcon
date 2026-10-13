@@ -29,6 +29,8 @@ type
     checkpoints*: seq[Checkpoint]
     checkpointSpacing*: int32
     observer*: ArrivalObserver
+    tickObserver*: proc(world: World)
+      ## Optional viewer sampling stays outside recorded simulation state.
     historyMargin*: int32
       ## A viewer may replay a short lead-in to reconstruct transient art.
 
@@ -199,12 +201,16 @@ proc step*(session: Session) {.measure.} =
     if session.world.tick < session.maximumTicks:
       session.replay.replayTick(session.world, session.replayCursor,
         session.replayChatCursor, session.observer)
+      if session.tickObserver != nil:
+        session.tickObserver(session.world)
       session.captureCheckpoint()
     session.done = session.world.tick >= session.maximumTicks
     return
   if session.inHistory:
     session.recording.replayTick(session.world, session.replayCursor,
       session.replayChatCursor, session.observer)
+    if session.tickObserver != nil:
+      session.tickObserver(session.world)
     if session.world.tick >= session.liveWorld.tick:
       session.returnToLive()
     return
@@ -217,6 +223,8 @@ proc step*(session: Session) {.measure.} =
   for owner in countdown(session.liveWorld.setup.players, 1):
     session.brains[owner].decide()
   session.liveWorld.advance(session.observer)
+  if session.tickObserver != nil:
+    session.tickObserver(session.liveWorld)
   if session.keepHistory:
     session.recording.recordTick(session.liveWorld)
     session.captureCheckpoint()

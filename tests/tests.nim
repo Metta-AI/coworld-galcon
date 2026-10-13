@@ -477,8 +477,9 @@ block:
   removeFile(path)
 
 when not defined(headless):
-  import test_transports
+  import test_transports, test_summaries
   testTransports()
+  testSummaries()
 
 import test_spaces, test_chats, test_effects
 testSpaces()

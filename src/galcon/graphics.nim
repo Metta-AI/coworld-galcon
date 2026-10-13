@@ -3,7 +3,8 @@ import
   silky, pixie, vmath, chroma, bumpy, opengl, slappy,
   polyworld/profiles as gameProfiles,
   polyworld/viewers,
-  common, controls, textures, options, sessions, transports, chats, effects
+  common, controls, textures, options, sessions, transports, chats, effects,
+  summaries
 
 const
   Green = rgbx(85, 255, 85, 255)
@@ -26,7 +27,7 @@ const
       "morale rises near friendly planets\n" &
       "and when receiving reinforcements.\n\n" &
       "attacks and nearby enemies lower it.\n\n" &
-      "tab cycles ships, production, morale."
+    "tab shows player ship histories."
   ]
   HelpText = "click planets to select a group.\n" &
     "double-click yours to select all.\n" &
@@ -34,7 +35,7 @@ const
     "drag empty space to select a box.\n" &
     "right-click clears the selection.\n\n" &
     "1-9: 10-90%, 0: 100% ships\n" &
-    "tab: ships / production / morale\n" &
+    "tab: player ship histories\n" &
     "space or f10: pause\n" &
     "f2: profile, f3: music\n" &
     "enter: global chat\n" &
@@ -52,6 +53,8 @@ type
     paints: Paints
     effects: Effects
     session: Session
+    summary: Summary
+    card: Card
     controls: Controls
     screen: Screen
     offset: Vec2
@@ -176,12 +179,20 @@ proc start(view: View, tutorial = 0) =
   ## Starts a seeded match or one of the original three tutorial maps.
   if view.session != nil:
     view.session.observer = nil
+    view.session.tickObserver = nil
     view.session.finish()
   var options = view.options.clone()
   options.setup =
     if tutorial > 0: tutorialSetup(options.game.seed, tutorial)
     else: options.matchSetup(view.difficulty)
   view.session = newSession(options)
+  view.card = Card()
+  view.summary = newSummary(view.session.maximumTicks)
+  view.summary.observe(view.session.world)
+  let history = view.summary
+  view.session.tickObserver = proc(world: World) =
+    ## Captures displayed ship histories without owning the view or session.
+    history.observe(world)
   view.effects = Effects(seed: view.session.world.setup.seed)
   view.session.historyMargin = EffectHistoryTicks
   let current {.cursor.} = view
@@ -310,6 +321,121 @@ proc drawChat(view: View) =
       maxWidth = Width - 20, maxHeight = 20
     )
 
+proc disc(view: View, center: Vec2, radius: float32, color: ColorRGBX) =
+  ## Fills a faction marker with the existing solid-color triangle batch.
+  let
+    uv = view.sk.atlas.entries[WhiteTileKey]
+    sample = vec2(uv.x.float32 + 8, uv.y.float32 + 8)
+  var previous = center + vec2(radius, 0)
+  for i in 1 .. 32:
+    let
+      angle = i.float32 * PI.float32 / 16
+      next = center + vec2(math.cos(angle), math.sin(angle)) * radius
+    view.sk.drawTriangle([center, previous, next],
+      [sample, sample, sample], [color, color, color])
+    previous = next
+
+proc fitText(view: View, font, value: string, width: float32): string =
+  ## Bounds public player labels without cutting a UTF-8 codepoint.
+  if view.sk.getTextSize(font, value).x <= width:
+    return value
+  result = value
+  while result.len > 0:
+    var ending = result.len - 1
+    while ending > 0 and (result[ending].ord and 0xc0) == 0x80:
+      dec ending
+    result.setLen(ending)
+    if view.sk.getTextSize(font, result & "...").x <= width:
+      return result & "..."
+
+proc cardPanel(view: View, origin, size: Vec2) =
+  ## Fills a softly rounded panel without a border or overlapping alpha.
+  let
+    color = rgbx(2, 12, 25, 225)
+    center = origin + size / 2
+    corners = [
+      origin + vec2(size.x - 8, 8),
+      origin + size - vec2(8),
+      origin + vec2(8, size.y - 8),
+      origin + vec2(8)
+    ]
+    uv = view.sk.atlas.entries[WhiteTileKey]
+    sample = vec2(uv.x.float32 + 8, uv.y.float32 + 8)
+    first = corners[0] + vec2(0, -8)
+  var previous = first
+  for k, corner in corners:
+    for i in 0 .. 8:
+      let
+        angle = (k - 1).float32 * PI.float32 / 2 +
+          i.float32 * PI.float32 / 16
+        point = corner + vec2(math.cos(angle), math.sin(angle)) * 8
+      view.sk.drawTriangle([center, previous, point],
+        [sample, sample, sample], [color, color, color])
+      previous = point
+  view.sk.drawTriangle([center, previous, first],
+    [sample, sample, sample], [color, color, color])
+
+proc drawCard(view: View) =
+  ## Draws the approved borderless native-font card on one shared ship scale.
+  if not view.card.shown:
+    return
+  let
+    world = view.session.world
+    tick = world.tick
+    players = world.setup.players
+    rowHeight = min(38.0'f, 310.0'f / players.float32)
+    height = 86.0'f + rowHeight * players.float32
+    origin = vec2(36, (Height.float32 - height) / 2)
+    title =
+      if world.winner > 0: view.session.displayName(world.winner) & " wins"
+      elif view.card.terminal: "Draw"
+      else: "Players"
+    color = if world.winner > 0: ownerColor(world.winner) else: White
+    font = if players > 10: "ScoreSmall" else: "Score"
+    sample = view.summary.samples[tick]
+    maximum = max(sample.maximum, 1).float64
+  view.sk.drawRect(view.offset, vec2(Width, Height), rgbx(0, 0, 0, 48))
+  view.cardPanel(view.offset + origin, vec2(568, height))
+  let heading = view.fitText("ScoreTitle", title, 528)
+  let headingWidth = view.sk.getTextSize("ScoreTitle", heading).x
+  view.text("ScoreTitle", heading,
+    vec2((Width.float32 - headingWidth) / 2, origin.y + 20), color)
+  for owner in 1 .. players:
+    let
+      y = origin.y + 70 + (owner - 1).float32 * rowHeight
+      tint = ownerColor(owner)
+      label = view.fitText(font, view.session.displayName(owner), 200)
+      value = $sample.ships[owner]
+      valueWidth = view.sk.getTextSize(font, value).x
+      endTick =
+        if view.summary.eliminated[owner] >= 0:
+          min(tick, view.summary.eliminated[owner])
+        else:
+          tick
+      stride = max(1, tick div 210)
+      graph = vec2(282, y - rowHeight * 0.32'f)
+      graphHeight = rowHeight * 0.72'f
+    view.disc(view.offset + vec2(56, y), 6, tint)
+    view.text(font, label, vec2(73, y - 9), tint)
+    view.text(font, value, vec2(588 - valueWidth, y - 9), tint)
+    var
+      at = 0'i32
+      previous: Vec2
+      first = true
+    while true:
+      let point = view.offset + graph + vec2(
+        at.float32 / max(tick, 1).float32 * 236,
+        graphHeight * (1 -
+          (view.summary.samples[at].ships[owner].float64 / maximum).float32)
+      )
+      if not first:
+        view.line(previous, point, tint, 1.5'f)
+      previous = point
+      first = false
+      if at == endTick:
+        break
+      at = min(at + stride, endTick)
+
 proc drawGame(view: View) {.measure.} =
   ## Paints 2D art, translucent effects, transparent counts, and the LD8 HUD.
   view.updateBoard()
@@ -356,7 +482,7 @@ proc drawGame(view: View) {.measure.} =
     view.line(vec2(b.x, a.y), b, Green)
     view.line(b, vec2(a.x, b.y), Green)
     view.line(vec2(a.x, b.y), a, Green)
-  if view.controls.hover >= 0:
+  if view.controls.hover >= 0 and not view.card.shown:
     let p = world.planets[view.controls.hover]
     view.text("Hover", p.name & "   Prod: " & $p.production &
       "   Morale: " & $p.morale & "   Ships: " & $p.shipCount,
@@ -366,23 +492,20 @@ proc drawGame(view: View) {.measure.} =
       "From: " & $selected & " planets   Ships: " & $sending &
         " (" & $view.controls.percent & "%)"
     view.text("Hud", status, vec2(0, 450), selectionColor, centered = true)
-  view.drawChat()
+  if not view.card.shown:
+    view.drawChat()
   case view.screen
   of TutorialScreen:
     view.centeredLines("tutorial #" & $view.tutorial,
       TutorialTexts[view.tutorial - 1])
   of EndScreen:
-    let title =
-      if world.winner < 0: "time limit - draw"
-      elif view.session.human == 0:
-        view.session.displayName(world.winner) & " wins!"
-      elif world.winner == view.session.human: "you win!"
-      else: "you lose!"
-    view.centeredLines(title, "")
+    discard
   else:
-    if not view.transport.player.playing and
+    if not view.card.shown and not view.transport.player.playing and
       view.transport.player.targetTick < 0:
         view.text("Hud", "paused", vec2(0, 36), centered = true)
+  if view.screen != TutorialScreen:
+    view.drawCard()
 
 proc handleInput(view: View) =
   ## Normalizes native input into logical integer Galcon controls.
@@ -432,6 +555,9 @@ proc handleInput(view: View) =
     view.controls.holding = false
     return
   if game:
+    if window.buttonPressed[KeyTab]:
+      view.card.toggle()
+      view.controls.holding = false
     if window.buttonPressed[KeySpace] or window.buttonPressed[KeyF10]:
       view.transport.player.togglePlay()
       view.controls.holding = false
@@ -461,7 +587,7 @@ proc handleInput(view: View) =
     if window.buttonPressed[KeyEscape]:
       view.returnToMenu()
   of EndScreen:
-    if clicked or entered:
+    if entered:
       if view.tutorial in 1 .. 2 and view.session.world.winner == 1:
         view.start(view.tutorial + 1)
       else:
@@ -472,13 +598,13 @@ proc handleInput(view: View) =
     if window.buttonPressed[KeyEscape]:
       view.returnToMenu()
       return
-    if window.buttonPressed[KeyTab]:
-      view.stat = (view.stat + 1) mod 4
     let keys = [Key0, Key1, Key2, Key3, Key4, Key5, Key6, Key7, Key8, Key9]
     for i, key in keys:
       if window.buttonPressed[key]:
         view.controls.percent = if i == 0: 100 else: i * 10
     view.controls.point(view.session.world, x, y)
+    if view.card.shown:
+      return
     if view.session.canCommand and view.transport.player.playing and
       view.transport.player.targetTick < 0:
       if window.buttonPressed[MouseRight]:
@@ -528,7 +654,9 @@ proc frame(view: View) =
       view.session,
       elapsed.float32,
       frameStart,
-      singleTick = view.options.screenshot.len > 0
+      singleTick = view.options.screenshot.len > 0,
+      holdAtEnd = not view.card.terminal or
+        view.card.holding(now.ticks.float64 / 1e9)
     ):
       view.controls.holding = false
       view.boardRevision = -1
@@ -545,6 +673,8 @@ proc frame(view: View) =
         EndScreen
       else:
         GameScreen
+    view.card.update(view.screen == EndScreen,
+      getMonoTime().ticks.float64 / 1e9)
   view.sk.beginUi(view.window, view.window.size)
   view.sk.clearScreen(rgbx(0, 0, 0, 255))
   view.sk.pushClipRect(rect(view.offset, vec2(Width, Height)))
@@ -601,6 +731,9 @@ proc runGraphics*(options: Options) =
   builder.addFont(Assets / "zeroes_3.ttf", "Hud", 24)
   builder.addFont(Assets / "zeroes_3.ttf", "Small", 20)
   builder.addFont(Assets / "zeroes_3.ttf", "Hover", 16)
+  builder.addFont(Assets / "zeroes_3.ttf", "ScoreTitle", 24)
+  builder.addFont(Assets / "zeroes_3.ttf", "Score", 14)
+  builder.addFont(Assets / "zeroes_3.ttf", "ScoreSmall", 10)
   builder.addFont(Assets / "zeroes_3.ttf", "Numbers", 14)
   builder.addFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
   builder.addTransportAssets()
@@ -638,6 +771,7 @@ proc runGraphics*(options: Options) =
     waitForDisplay()
   if view.session != nil:
     view.session.observer = nil
+    view.session.tickObserver = nil
     view.session.finish()
   for source in [view.musicSource, view.launchSource, view.blastSource,
     view.captureSource]:
