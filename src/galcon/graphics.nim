@@ -11,6 +11,10 @@ const
   White = rgbx(255, 255, 255, 255)
   Gray = rgbx(170, 170, 170, 255)
   Shadow = rgbx(0, 0, 0, 255)
+  PlayerListScale = 0.8'f
+  PlayerListWidth = 200.0'f
+  PlayerListRowHeight = 16.0'f
+  PlayerListBackground = rgbx(1, 5, 10, 102)
   TutorialTexts = [
     "you are the green player.\n" &
       "click and hold on your planet,\n" &
@@ -55,6 +59,9 @@ type
     session: Session
     summary: Summary
     card: Card
+    rosterLabels, rosterValues: array[MaxPlayers + 1, string]
+    rosterCounts: array[MaxPlayers + 1, int64]
+    rosterWidths: array[MaxPlayers + 1, float32]
     controls: Controls
     screen: Screen
     offset: Vec2
@@ -187,6 +194,9 @@ proc start(view: View, tutorial = 0) =
     else: options.matchSetup(view.difficulty)
   view.session = newSession(options)
   view.card = Card()
+  for owner in 1 .. MaxPlayers:
+    view.rosterLabels[owner] = ""
+    view.rosterValues[owner] = ""
   view.summary = newSummary(view.session.maximumTicks)
   view.summary.observe(view.session.world)
   let history = view.summary
@@ -287,27 +297,38 @@ proc drawShips(view: View) =
       position.y.toFloat32 - particle.height.float32 / 2
     ), rgbx(alpha, alpha, alpha, alpha))
 
+proc playerListBottom(view: View): float32 =
+  ## Reserves the compact roster's height for hover information and chat.
+  if view.screen == TutorialScreen:
+    return 0
+  8 + (16 + view.session.world.setup.players.float32 *
+    PlayerListRowHeight) * PlayerListScale
+
 proc drawChat(view: View) =
   ## Shows recent global messages with color names and wrapped readable text.
   let world = view.session.world
-  var y = 36.0'f
+  var y = max(36.0'f, view.playerListBottom() +
+    (if view.controls.hover >= 0: 30.0'f else: 8.0'f))
   for i in max(0, world.chatCount - 5) ..< world.chatCount:
     let message = world.chats[(world.chatFirst + i) mod MaxChatLines]
     if world.tick - message.tick > ChatLifetime:
       continue
+    let available = min(48.0'f, 404.0'f - y)
+    if available <= 0:
+      break
     let
       value = view.session.displayName(message.player.int) & ": " &
         message.chatText()
       at = view.offset + vec2(10, y)
     discard view.sk.drawText(
       "Chat", value, at + vec2(1, 1), Shadow,
-      maxWidth = 320, maxHeight = 48, wordWrap = true
+      maxWidth = 320, maxHeight = available, wordWrap = true
     )
     let size = view.sk.drawText(
       "Chat", value, at, ownerColor(message.player.int),
-      maxWidth = 320, maxHeight = 48, wordWrap = true
+      maxWidth = 320, maxHeight = available, wordWrap = true
     )
-    y += min(size.y, 48) + 6
+    y += min(size.y, available) + 6
   if view.chatting:
     let
       value = "Global: " & view.chatInput & "|"
@@ -348,10 +369,12 @@ proc fitText(view: View, font, value: string, width: float32): string =
     if view.sk.getTextSize(font, result & "...").x <= width:
       return result & "..."
 
-proc cardPanel(view: View, origin, size: Vec2) =
+proc cardPanel(
+    view: View, origin, size: Vec2,
+    color = rgbx(2, 12, 25, 225)
+) =
   ## Fills a softly rounded panel without a border or overlapping alpha.
   let
-    color = rgbx(2, 12, 25, 225)
     center = origin + size / 2
     corners = [
       origin + vec2(size.x - 8, 8),
@@ -374,6 +397,42 @@ proc cardPanel(view: View, origin, size: Vec2) =
       previous = point
   view.sk.drawTriangle([center, previous, first],
     [sample, sample, sample], [color, color, color])
+
+proc drawPlayers(view: View) =
+  ## Shows native-font faction chips and ship totals at eighty-percent size.
+  if view.card.shown or view.screen == TutorialScreen:
+    return
+  let
+    world = view.session.world
+    sample = view.summary.samples[world.tick]
+    origin = view.offset + vec2(8)
+    firstVertex = view.sk.drawer.layers[NormalLayer].len
+    height = 16 + world.setup.players.float32 * PlayerListRowHeight
+  view.cardPanel(origin, vec2(PlayerListWidth, height), PlayerListBackground)
+  for owner in 1 .. world.setup.players:
+    if view.rosterLabels[owner].len == 0:
+      view.rosterLabels[owner] = view.fitText(
+        "Players", view.session.displayName(owner), 118
+      )
+    if view.rosterValues[owner].len == 0 or
+      view.rosterCounts[owner] != sample.ships[owner]:
+        view.rosterCounts[owner] = sample.ships[owner]
+        view.rosterValues[owner] = $sample.ships[owner]
+        view.rosterWidths[owner] = view.sk.getTextSize(
+          "Players", view.rosterValues[owner]
+        ).x
+    let
+      y = 16 + (owner - 1).float32 * PlayerListRowHeight
+      tint = ownerColor(owner)
+    view.disc(origin + vec2(12, y), 4, tint)
+    view.text("Players", view.rosterLabels[owner],
+      vec2(32, 8 + y - 7), tint)
+    view.text("Players", view.rosterValues[owner],
+      vec2(8 + PlayerListWidth - 8 - view.rosterWidths[owner], 8 + y - 7),
+      tint)
+  for i in firstVertex ..< view.sk.drawer.layers[NormalLayer].len:
+    let vertex = addr view.sk.drawer.layers[NormalLayer][i]
+    vertex.pos = origin + (vertex.pos - origin) * PlayerListScale
 
 proc drawCard(view: View) =
   ## Draws the approved borderless native-font card on one shared ship scale.
@@ -486,13 +545,15 @@ proc drawGame(view: View) {.measure.} =
     let p = world.planets[view.controls.hover]
     view.text("Hover", p.name & "   Prod: " & $p.production &
       "   Morale: " & $p.morale & "   Ships: " & $p.shipCount,
-      vec2(8, 4), Green, maxWidth = Width.float32 - 16)
+      vec2(8, max(4.0'f, view.playerListBottom() + 6)), Green,
+      maxWidth = Width.float32 - 16)
   if view.session.human > 0 and not view.session.inHistory:
     let status =
       "From: " & $selected & " planets   Ships: " & $sending &
         " (" & $view.controls.percent & "%)"
     view.text("Hud", status, vec2(0, 450), selectionColor, centered = true)
   if not view.card.shown:
+    view.drawPlayers()
     view.drawChat()
   case view.screen
   of TutorialScreen:
@@ -734,6 +795,7 @@ proc runGraphics*(options: Options) =
   builder.addFont(Assets / "zeroes_3.ttf", "ScoreTitle", 24)
   builder.addFont(Assets / "zeroes_3.ttf", "Score", 14)
   builder.addFont(Assets / "zeroes_3.ttf", "ScoreSmall", 10)
+  builder.addFont(Assets / "zeroes_3.ttf", "Players", 12)
   builder.addFont(Assets / "zeroes_3.ttf", "Numbers", 14)
   builder.addFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
   builder.addTransportAssets()
