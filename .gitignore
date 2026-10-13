@@ -1,0 +1,21 @@
+# Ignore files with no extension.
+*
+!*/
+!*.*
+!LICENSE
+
+# Keep project configuration and GitHub workflows.
+.*
+!.github/
+!.github/**
+!.gitignore
+
+# Ignore generated binaries, caches, and local match output.
+*.exe
+nimcache/
+*.pdb
+*.ilk
+*.out
+build/
+tmp/
+*.replay

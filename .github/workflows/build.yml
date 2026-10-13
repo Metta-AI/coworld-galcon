@@ -1,0 +1,34 @@
+name: Github Actions
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: treeform/setup-nim-action@v6
+      - name: Install dependencies
+        shell: bash
+        run: |
+          cd ..
+          nimby create
+          nimby install "${{ github.event.repository.name }}/galcon.nimble"
+      - name: Check graphical and headless builds
+        run: |
+          nim check src/galcon.nim
+          nim check -d:headless src/galcon.nim
+      - name: Test deterministic simulation and rendering
+        run: |
+          nim check tests/tests.nim
+          nim r tests/tests.nim
+          nim r -d:release -d:fixedChecks -d:nimTypeNames tests/tests.nim
+      - name: Build the local game
+        run: nim c -d:release --out:build/galcon src/galcon.nim
