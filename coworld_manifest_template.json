@@ -1,0 +1,261 @@
+{
+  "tags": [
+    "strategy",
+    "basic",
+    "polyworld",
+    "space"
+  ],
+  "game": {
+    "name": "Galcon 2006",
+    "description": "Phil Hassey's original 2006 Galcon, ported from Python to Nim. BASIC bots capture textured planets and launch fleets in a deterministic 2D space battle. All credit for the original game and assets belongs to Phil Hassey.",
+    "owner": "treeform",
+    "player_runtime": "game-hosted",
+    "runnable": {
+      "type": "game",
+      "image": "{{GAME_IMAGE}}",
+      "source_url": "https://github.com/Metta-AI/coworld-galcon"
+    },
+    "config_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tokens",
+        "players",
+        "seed",
+        "max_ticks"
+      ],
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "players": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            }
+          }
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": -2147483648,
+          "maximum": 2147483647
+        },
+        "max_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 28800
+        },
+        "planets": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 128,
+          "default": 26,
+          "description": "Total planets, at least the number of players."
+        },
+        "difficulty": {
+          "type": "string",
+          "enum": [
+            "easy",
+            "medium",
+            "hard",
+            "crazy"
+          ],
+          "default": "easy"
+        }
+      }
+    },
+    "results_schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scores",
+        "ticks",
+        "seed",
+        "outcome"
+      ],
+      "properties": {
+        "scores": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "maxItems": 16
+        },
+        "ticks": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 28800
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "outcome": {
+          "type": "string"
+        },
+        "banked_gold": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "returned": {
+          "type": "array",
+          "items": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "replay_viewer": {
+      "bundle": "replay-viewer",
+      "replay_compression": "gzip"
+    },
+    "protocols": {
+      "player": {
+        "type": "text",
+        "value": "Upload raw BASIC source or a ZIP containing one .bas file. One policy owns one faction. selfPlayer() uses IDs 1 through playerCount(); owner 0 is neutral. Planet IDs and mailbox addresses are zero-based. Globals persist between decisions. Each 32 Hz tick restarts the policy with 200,000 instructions, 300,000 work units, 4 MiB memory, and bounded PRINT. Invalid commands return zero. A runtime error disables that policy; syntax errors fail the episode. Identity queries and mailbox sender labels expose colors only."
+      },
+      "global": {
+        "type": "text",
+        "value": "GET /client/global returns a static status page. /global sends one JSON status message after WebSocket upgrade and echoes Ping frames with Pong. No gameplay traffic uses WebSockets. Other legacy endpoints return explicit stubs."
+      }
+    },
+    "docs": {
+      "readme": {
+        "type": "text",
+        "value": "# Galcon 2006\n\nA Nim port of Phil Hassey's original 2006 Ludum Dare 8 Galcon, which became Galcon Classic. Original design, code, music, fonts, and artwork are credited to Phil Hassey. The original GNU GPL version 2 license is retained. Source: https://github.com/Metta-AI/coworld-galcon. Original: https://www.galcon.com/history/files/473_philhassey.zip.\n\nTwo to sixteen factions compete for two to 128 planets. Each faction starts with a home planet. Neutral planets contain defenders. Production and morale determine how quickly ships grow. Capture every opponent's planets to win. The surviving winner scores 1, every other faction scores 0. Draws and timeouts score 0 for everyone. The default Competition is a five-player free-for-all on 26 planets.\n\n## BASIC policy API\n\nUpload a .bas file or a ZIP with exactly one .bas file. Programs are run by Bassy's native BASIC JIT on supported server targets. Policy variables persist between ticks. Each decision has 200,000 instructions, 300,000 work units, 4 MiB memory, and bounded output. PRINT is private to the owning player.\n\nselfPlayer() identifies your one-based faction. playerCount(), planetCount(), and worldTick() expose match size and time. Planets use zero-based IDs. owner(p) is 0 for neutral and 1 through playerCount() for factions. Queries: ships(p), production(p), morale(p), realMorale(p), realShips(p), x(p), y(p), ready(p), neighborCount(p), and neighbor(p, rank). Neighbors are zero-based ranks. shuffleNeighbors(p) changes your policy's own neighbor order.\n\nlaunch(source, target, count) sends an exact ship count. send(source, target, percent) sends a percentage. Both enforce ownership and available stock and return how many ships were sent. fraction(p, numerator, denominator) truncates a stock fraction. reinforcement(a, b) returns half the friendly strength difference. stronger(a, b) checks the original ten-ship reinforcement threshold.\n\nThe baseline faithfully ports Phil's original neighbor-shuffling attack and reinforcement policy. A simple attack is:\n\n```basic\np = 0\nwhile p < planetCount()\n  if owner(p) = selfPlayer() and ships(p) >= 20 then\n    q = 0\n    while q < planetCount()\n      if owner(q) <> selfPlayer() then\n        sent = send(p, q, 50)\n        q = planetCount()\n      else\n        q = q + 1\n      end if\n    wend\n  end if\n  p = p + 1\nwend\n```\n\n## Global chat and anonymous bot identities\n\nsendChat(-2, text$) broadcasts to every faction, including yourself. pullMailbox$() returns the oldest unread message, or empty text. mailboxId() is -2 for global messages. mailboxCount(), mailboxSelf(), and mailboxPlayers() report inbox size, your zero-based address, and the roster size. Inbox capacity is 100 messages; each faction may send one message per tick. Messages are bounded to 1008 UTF-8 bytes and controls are normalized to spaces. Other channels are ignored.\n\nplayerName$(selfPlayer()) and playerColor$(selfPlayer()) return only your color, such as Red. mailboxName$(mailboxSelf()) uses the mailbox address and also returns a color. Received messages use color-only sender prefixes. Real policy names are viewer metadata, so humans see Red (Andre Bot) in replay chat while bots only see Red.\n\n## Replays\n\nThe shared Polyworld replay bar supports pause, frame stepping, 1x/2x/4x/16x playback, looping, and seeking. The browser runs the same fixed-point game code and verifies recorded gameplay hashes. Particle effects are viewer-only. Game time advances at 32 ticks per second. planets configures the total map size and difficulty selects easy, medium, hard, or crazy. There must be at least as many planets as players.\n\nThis port was generated with Codex. The original game remains Phil Hassey's work.\n"
+      }
+    }
+  },
+  "player": [
+    {
+      "id": "baseline",
+      "name": "Classic Bot",
+      "type": "player",
+      "file": "players/classic.bas",
+      "description": "Phil Hassey's original Galcon attack and reinforcement strategy, ported to BASIC."
+    },
+    {
+      "id": "chatty",
+      "name": "Chatty Bot",
+      "type": "player",
+      "file": "players/chatty.bas",
+      "description": "The classic policy with global color-only chat."
+    }
+  ],
+  "variants": [
+    {
+      "id": "duel",
+      "name": "Duel",
+      "game_config": {
+        "players": [
+          {
+            "name": "Classic Bot 1"
+          },
+          {
+            "name": "Classic Bot 2"
+          }
+        ],
+        "seed": 8,
+        "max_ticks": 19200,
+        "planets": 26,
+        "difficulty": "easy"
+      },
+      "description": "Original two-player Galcon battle."
+    },
+    {
+      "id": "competition",
+      "name": "Competition",
+      "game_config": {
+        "players": [
+          {
+            "name": "Classic Bot 1"
+          },
+          {
+            "name": "Classic Bot 2"
+          },
+          {
+            "name": "Classic Bot 3"
+          },
+          {
+            "name": "Classic Bot 4"
+          },
+          {
+            "name": "Classic Bot 5"
+          }
+        ],
+        "seed": 8,
+        "max_ticks": 19200,
+        "planets": 26,
+        "difficulty": "easy"
+      },
+      "description": "Five-player free-for-all on 26 planets."
+    }
+  ],
+  "certification": {
+    "game_config": {
+      "players": [
+        {
+          "name": "Classic Bot 1"
+        },
+        {
+          "name": "Classic Bot 2"
+        },
+        {
+          "name": "Classic Bot 3"
+        },
+        {
+          "name": "Classic Bot 4"
+        },
+        {
+          "name": "Chatty Bot"
+        }
+      ],
+      "seed": 8,
+      "max_ticks": 19200,
+      "planets": 26,
+      "difficulty": "easy"
+    },
+    "players": [
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "baseline"
+      },
+      {
+        "player_id": "chatty"
+      }
+    ]
+  }
+}

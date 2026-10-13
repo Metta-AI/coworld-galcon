@@ -2,6 +2,7 @@ import
   std/[os, math, tables, strutils, monotimes, times, unicode],
   silky, pixie, vmath, chroma, bumpy, opengl, slappy,
   polyworld/profiles as gameProfiles,
+  polyworld/viewers,
   common, controls, textures, options, sessions, transports, chats, effects
 
 const
@@ -65,6 +66,7 @@ type
     musicEnabled: bool
     seenCaptures, seenImpacts: int
     chatting: bool
+    closing: bool
     chatInput: string
 
 proc ownerColor(owner: int): ColorRGBX =
@@ -172,6 +174,7 @@ proc updateBoard(view: View) {.measure.} =
 proc start(view: View, tutorial = 0) =
   ## Starts a seeded match or one of the original three tutorial maps.
   if view.session != nil:
+    view.session.observer = nil
     view.session.finish()
   var options = view.options.clone()
   options.setup =
@@ -180,11 +183,12 @@ proc start(view: View, tutorial = 0) =
   view.session = newSession(options)
   view.effects = Effects(seed: view.session.world.setup.seed)
   view.session.historyMargin = EffectHistoryTicks
+  let current {.cursor.} = view
   view.session.observer = proc(arrival: Arrival) =
     ## Reconstructs only the particles that can survive a requested seek.
-    let target = view.transport.player.targetTick
+    let target = current.transport.player.targetTick
     if target < 0 or arrival.tick + 1 >= target - EffectHistoryTicks:
-      view.effects.observe(arrival)
+      current.effects.observe(arrival)
   view.chatting = false
   view.chatInput.setLen(0)
   view.controls = Controls(player: view.session.human, percent: 50, anchor: -1,
@@ -212,7 +216,7 @@ proc menuAction(view: View) =
   of 0: view.start(1)
   of 1: view.start()
   of 2: view.screen = HelpScreen
-  of 3: view.window.closeRequested = true
+  of 3: view.closing = true
   else: discard
 
 proc returnToMenu(view: View) =
@@ -433,7 +437,7 @@ proc handleInput(view: View) =
   case view.screen
   of MenuScreen:
     if window.buttonPressed[KeyEscape]:
-      window.closeRequested = true
+      view.closing = true
     if window.buttonPressed[KeyDown]:
       view.selection = (view.selection + 1) mod 4
     if window.buttonPressed[KeyUp]:
@@ -492,7 +496,7 @@ proc capture(view: View) =
     GL_RGBA, GL_UNSIGNED_BYTE, image.data[0].addr)
   image.flipVertical()
   image.writeFile(view.options.screenshot)
-  view.window.closeRequested = true
+  view.closing = true
 
 proc layout(view: View) =
   ## Separates board scaling from the shared transport's logical coordinates.
@@ -570,6 +574,9 @@ proc frame(view: View) =
   if view.options.screenshot.len > 0 and view.frames >= view.options.frames:
     view.capture()
   view.window.swapBuffers()
+  reportReplayFrame(
+    if view.session == nil: 0'i32 else: view.session.world.tick, 0
+  )
 
 proc runGraphics*(options: Options) =
   ## Opens a local Silky 2D window with the original assets and BASIC opponents.
@@ -624,9 +631,11 @@ proc runGraphics*(options: Options) =
   window.onFrame = proc() =
     ## Presents one interactive game frame.
     view.frame()
-  while not window.closeRequested:
+  while not window.closeRequested and not view.closing:
     pollEvents()
+    waitForDisplay()
   if view.session != nil:
+    view.session.observer = nil
     view.session.finish()
   for source in [view.musicSource, view.launchSource, view.blastSource,
     view.captureSource]:

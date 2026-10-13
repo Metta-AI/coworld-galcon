@@ -3,12 +3,14 @@
 !*/
 !*.*
 !LICENSE
+!Dockerfile
 
 # Keep project configuration and GitHub workflows.
 .*
 !.github/
 !.github/**
 !.gitignore
+!.dockerignore
 
 # Ignore generated binaries, caches, and local match output.
 *.exe
@@ -19,3 +21,4 @@ nimcache/
 build/
 tmp/
 *.replay
+dist/

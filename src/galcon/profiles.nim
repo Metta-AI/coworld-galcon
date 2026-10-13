@@ -3,7 +3,8 @@ const
   ProfileFrames* {.intdefine.} = 512
   ProfileStartTick* {.intdefine.} = 2048
 
-when ProfileTracePath.len > 0 or not defined(headless):
+when ProfileTracePath.len > 0 or
+  (not defined(headless) and not defined(emscripten)):
   import fluffy/measure
   when ProfileTracePath.len > 0:
     import std/os

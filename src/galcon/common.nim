@@ -22,7 +22,9 @@ const
   MaxGridCells* = ((Width + 15) div 16) * ((Height + 15) div 16)
   TextureSize* = 256
   Root* = currentSourcePath().parentDir.parentDir.parentDir
-  Assets* = Root / "assets"
+  Assets* =
+    when defined(emscripten): "/assets"
+    else: Root / "assets"
   Baseline* = Root / "players" / "classic.bas"
   Colors*: array[MaxPlayers + 1, array[3, uint8]] = [
     [68'u8, 68, 68], [85'u8, 255, 85], [255'u8, 170, 0],

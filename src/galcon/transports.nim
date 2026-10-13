@@ -7,8 +7,7 @@ import
 export player, gameuis
 
 const
-  TransportAssets = currentSourcePath().parentDir.parentDir.parentDir /
-    "assets" / "transport"
+  TransportAssets = Assets / "transport"
   ControlIcons = [
     "skip_to_start", "previous_frame", "play", "next_frame", "skip_to_end"
   ]

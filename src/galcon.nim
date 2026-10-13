@@ -5,8 +5,14 @@ when not defined(headless):
   import galcon/graphics
 
 when defined(coworld):
+  import std/[os, uri, strutils]
+  import jsony
   import polyworld/[cli, coworld]
   import galcon/replays
+
+  type HostedMap = ref object
+    planets: int = 26
+    difficulty: string = "easy"
 
 proc main*() =
   ## Starts the local Galcon port or a Polyworld Coworld policy match.
@@ -19,6 +25,16 @@ proc main*() =
     if options.game.maximumTicks <= 0 or options.game.maximumTicks > MaxTicks:
       raise newException(GalconError, "Coworld duration exceeds Galcon limits")
     options.playerCount = options.game.botGroups.botCount()
+    let map = readFile(parseUri(getEnv("COGAME_CONFIG_URI")).path.decodeUrl())
+      .fromJson(HostedMap)
+    options.planetCount = map.planets
+    case map.difficulty.toLowerAscii()
+    of "easy": options.setup.difficulty = Easy
+    of "medium": options.setup.difficulty = Medium
+    of "hard": options.setup.difficulty = Hard
+    of "crazy": options.setup.difficulty = Crazy
+    else:
+      raise newException(GalconError, "Invalid hosted difficulty")
     options.headless = true
     options.start = true
     options.resolveOptions()

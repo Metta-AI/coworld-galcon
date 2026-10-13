@@ -1,0 +1,7 @@
+services:
+  game:
+    image: coworld-galcon:latest
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: Dockerfile
