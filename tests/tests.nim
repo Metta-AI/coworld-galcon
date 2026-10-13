@@ -288,7 +288,7 @@ block:
   for i in 0 ..< loaded.hashes.len:
     loaded.replayTick(playback, cursor)
   doAssert playback.fingerprint() == a.world.fingerprint()
-  doAssert a.world.fingerprint() == 8612714687486866794'u64
+  doAssert a.world.fingerprint() == 4340886293693051240'u64
   echo "Golden deterministic state: ", a.world.fingerprint()
   writeFile(Root / "build" / "deterministic.hash", $a.world.fingerprint())
   let damaged = loaded.clone()
@@ -398,7 +398,7 @@ block:
   playback.seek(1200)
   removeFile(path)
 
-echo "Version 2 replays retain original physics when upgraded to version 3"
+echo "Version 2 replays retain original physics in the current replay format"
 block:
   type
     OriginalSetup = object
@@ -480,7 +480,9 @@ when not defined(headless):
   import test_transports
   testTransports()
 
-import test_spaces
+import test_spaces, test_chats, test_effects
 testSpaces()
+testChats()
+testEffects()
 
 echo "All Galcon checks passed"

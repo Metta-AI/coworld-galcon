@@ -1,8 +1,8 @@
 import
-  std/[os, math, tables, strutils, monotimes, times],
+  std/[os, math, tables, strutils, monotimes, times, unicode],
   silky, pixie, vmath, chroma, bumpy, opengl, slappy,
   polyworld/profiles as gameProfiles,
-  common, controls, textures, options, sessions, transports
+  common, controls, textures, options, sessions, transports, chats, effects
 
 const
   Green = rgbx(85, 255, 85, 255)
@@ -36,6 +36,7 @@ const
     "tab: ships / production / morale\n" &
     "space or f10: pause\n" &
     "f2: profile, f3: music\n" &
+    "enter: global chat\n" &
     "alt-enter: fullscreen\n" &
     "escape: return to menu\n\n" &
     "have fun!"
@@ -48,6 +49,7 @@ type
     sk: Silky
     options: Options
     paints: Paints
+    effects: Effects
     session: Session
     controls: Controls
     screen: Screen
@@ -62,6 +64,8 @@ type
     musicSource, launchSource, blastSource, captureSource: Source
     musicEnabled: bool
     seenCaptures, seenImpacts: int
+    chatting: bool
+    chatInput: string
 
 proc ownerColor(owner: int): ColorRGBX =
   ## Converts the original player palette at the rendering boundary.
@@ -174,6 +178,15 @@ proc start(view: View, tutorial = 0) =
     if tutorial > 0: tutorialSetup(options.game.seed, tutorial)
     else: options.matchSetup(view.difficulty)
   view.session = newSession(options)
+  view.effects = Effects(seed: view.session.world.setup.seed)
+  view.session.historyMargin = EffectHistoryTicks
+  view.session.observer = proc(arrival: Arrival) =
+    ## Reconstructs only the particles that can survive a requested seek.
+    let target = view.transport.player.targetTick
+    if target < 0 or arrival.tick + 1 >= target - EffectHistoryTicks:
+      view.effects.observe(arrival)
+  view.chatting = false
+  view.chatInput.setLen(0)
   view.controls = Controls(player: view.session.human, percent: 50, anchor: -1,
     hover: -1)
   view.paints = newPaints(view.session.world.planets.len)
@@ -245,16 +258,52 @@ proc drawShips(view: View) =
     view.line(b, c, color)
     view.line(c, a, color)
   let particle = view.sk.atlas.entries["Particle"]
-  for effect in world.effects:
-    if not effect.active:
+  for effect in view.effects.particles:
+    let frame = effect.frame(world.tick)
+    if frame >= 33:
       continue
     let alpha =
-      if effect.frame > 25: clamp(255 - (effect.frame - 25) * 31, 0, 255).uint8
+      if frame > 25: clamp(255 - (frame - 25) * 31, 0, 255).uint8
       else: 255'u8
+    let position = effect.position(world.tick)
     view.sk.drawImage("Particle", view.offset + vec2(
-      effect.x.toFloat32 - particle.width.float32 / 2,
-      effect.y.toFloat32 - particle.height.float32 / 2
+      position.x.toFloat32 - particle.width.float32 / 2,
+      position.y.toFloat32 - particle.height.float32 / 2
     ), rgbx(alpha, alpha, alpha, alpha))
+
+proc drawChat(view: View) =
+  ## Shows recent global messages with color names and wrapped readable text.
+  let world = view.session.world
+  var y = 36.0'f
+  for i in max(0, world.chatCount - 5) ..< world.chatCount:
+    let message = world.chats[(world.chatFirst + i) mod MaxChatLines]
+    if world.tick - message.tick > ChatLifetime:
+      continue
+    let
+      value = view.session.displayName(message.player.int) & ": " &
+        message.chatText()
+      at = view.offset + vec2(10, y)
+    discard view.sk.drawText(
+      "Chat", value, at + vec2(1, 1), Shadow,
+      maxWidth = 320, maxHeight = 48, wordWrap = true
+    )
+    let size = view.sk.drawText(
+      "Chat", value, at, ownerColor(message.player.int),
+      maxWidth = 320, maxHeight = 48, wordWrap = true
+    )
+    y += min(size.y, 48) + 6
+  if view.chatting:
+    let
+      value = "Global: " & view.chatInput & "|"
+      at = view.offset + vec2(10, 424)
+    discard view.sk.drawText(
+      "Chat", value, at + vec2(1, 1), Shadow,
+      maxWidth = Width - 20, maxHeight = 20
+    )
+    discard view.sk.drawText(
+      "Chat", value, at, White,
+      maxWidth = Width - 20, maxHeight = 20
+    )
 
 proc drawGame(view: View) {.measure.} =
   ## Paints 2D art, translucent effects, transparent counts, and the LD8 HUD.
@@ -312,6 +361,7 @@ proc drawGame(view: View) {.measure.} =
       "From: " & $selected & " planets   Ships: " & $sending &
         " (" & $view.controls.percent & "%)"
     view.text("Hud", status, vec2(0, 450), selectionColor, centered = true)
+  view.drawChat()
   case view.screen
   of TutorialScreen:
     view.centeredLines("tutorial #" & $view.tutorial,
@@ -319,7 +369,8 @@ proc drawGame(view: View) {.measure.} =
   of EndScreen:
     let title =
       if world.winner < 0: "time limit - draw"
-      elif view.session.human == 0: "player " & $world.winner & " wins!"
+      elif view.session.human == 0:
+        view.session.displayName(world.winner) & " wins!"
       elif world.winner == view.session.human: "you win!"
       else: "you lose!"
     view.centeredLines(title, "")
@@ -357,6 +408,24 @@ proc handleInput(view: View) =
       view.musicSource.play()
     else:
       view.musicSource.stop()
+  if view.chatting:
+    if not view.session.canCommand or window.buttonPressed[KeyEscape]:
+      view.chatting = false
+      view.chatInput.setLen(0)
+    elif entered:
+      discard view.session.chat.sendChat(view.session.human, -2, view.chatInput)
+      view.chatting = false
+      view.chatInput.setLen(0)
+    elif window.buttonPressed[KeyBackspace] and view.chatInput.len > 0:
+      var last = view.chatInput.len - 1
+      while last > 0 and (view.chatInput[last].ord and 0xc0) == 0x80:
+        dec last
+      view.chatInput.setLen(last)
+    return
+  if view.screen == GameScreen and entered and view.session.canCommand:
+    view.chatting = true
+    view.controls.holding = false
+    return
   if game:
     if window.buttonPressed[KeySpace] or window.buttonPressed[KeyF10]:
       view.transport.player.togglePlay()
@@ -448,6 +517,8 @@ proc frame(view: View) =
   view.handleInput()
   view.layout()
   if view.screen in {GameScreen, EndScreen}:
+    if view.transport.player.restoreTick >= 0:
+      view.effects.clear()
     if view.transport.advancePlayback(
       view.session,
       elapsed.float32,
@@ -494,6 +565,7 @@ proc frame(view: View) =
     if serial != view.transport.player.seekSerial:
       view.controls.holding = false
   view.sk.endUi()
+  view.window.runeInputEnabled = view.chatting
   inc view.frames
   if view.options.screenshot.len > 0 and view.frames >= view.options.frames:
     view.capture()
@@ -521,6 +593,7 @@ proc runGraphics*(options: Options) =
   builder.addFont(Assets / "zeroes_3.ttf", "Hud", 24)
   builder.addFont(Assets / "zeroes_3.ttf", "Small", 20)
   builder.addFont(Assets / "zeroes_3.ttf", "Numbers", 14)
+  builder.addFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
   builder.addTransportAssets()
   let particle = builder.atlas.entries["Particle"]
   for y in 0 ..< paints.particle.height:
@@ -540,6 +613,12 @@ proc runGraphics*(options: Options) =
     lastTime: getMonoTime()
   )
   view.initSounds()
+  window.onRune = proc(rune: Rune) =
+    ## Appends printable Unicode only while the global chat field is active.
+    if view.chatting and rune.int32 >= 32 and rune.int32 != 127:
+      let value = rune.toUTF8()
+      if view.chatInput.len + value.len <= MaxChatBytes - 16:
+        view.chatInput.add value
   if options.start:
     view.start(options.setup.tutorial)
   window.onFrame = proc() =

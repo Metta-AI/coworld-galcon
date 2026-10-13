@@ -10,9 +10,15 @@ const
   Height* = 480
   TickRate* = 32
   MaxBodies* = 4096
-  MaxEffects* = 1024
   MaxPlayers* = 16
   MaxPlanets* = 128
+  MaxChatLines* = 16
+  MaxChatBytes* = 1024
+  ColorNames*: array[MaxPlayers + 1, string] = [
+    "Gray", "Green", "Red", "Blue", "Purple", "Yellow", "Pink", "Cyan",
+    "Lavender", "Orange", "Lime", "Azure", "Scarlet", "Violet", "Mint",
+    "Rose", "Ice"
+  ]
   MaxGridCells* = ((Width + 15) div 16) * ((Height + 15) div 16)
   TextureSize* = 256
   Root* = currentSourcePath().parentDir.parentDir.parentDir
@@ -75,13 +81,19 @@ type
     textureKind*: int
   Ship* = object
     owner*, target*: int
-  Effect* = object
-    active*: bool
-    x*, y*, vx*, vy*: Fixed
-    frame*: int
+  Arrival* = object
+    tick*: int32
+    x*, y*, planetX*, planetY*: Fixed
+    radius*, impacts*, captures*: int
+    captured*: bool
+  ArrivalObserver* = proc(arrival: Arrival)
   Order* = object
     tick*: int32
     player*, source*, target*, count*: int32
+  ChatMessage* = object
+    tick*, player*: int32
+    length*: int
+    text*: array[MaxChatBytes, char]
   Setup* = ref object
     seed*: int32
     difficulty*: Difficulty
@@ -91,12 +103,11 @@ type
     counts*: seq[int]
   World* = ref object
     setup*: Setup
-    rng*, effectsRng*: Rng
+    rng*: Rng
     tick*: int32
     planets*: seq[Planet]
     bodies*: array[MaxBodies, Body]
     ships*: array[MaxBodies, Ship]
-    effects*: array[MaxEffects, Effect]
     activeBodies*: array[MaxBodies, uint16]
       ## Scratch indices enumerate active pool slots without tick allocations.
     spatialX*, spatialY*: array[MaxBodies, int32]
@@ -105,9 +116,20 @@ type
     gridHeads*: array[MaxGridCells, uint16]
     gridPlanetHeads*: array[MaxGridCells, uint16]
     gridNext*: array[MaxBodies, uint16]
-    bodyCursor*, effectCursor*, activeShips*: int
+    bodyCursor*, activeShips*: int
     endWait*, winner*, revision*, captures*, impacts*: int
     orders*: seq[Order]
+    chats*: array[MaxChatLines, ChatMessage]
+    chatFirst*, chatCount*: int
+    chatOrders*: array[MaxPlayers, ChatMessage]
+    chatOrderCount*: int
+
+proc playerName*(owner: int): string {.raises: [].} =
+  ## Identifies factions only by their distinct palette colors.
+  if owner in 0 .. MaxPlayers:
+    ColorNames[owner]
+  else:
+    ""
 
 proc defaultSetup*(seed = 8'i32, difficulty = Easy): Setup =
   ## Selects the original difficulty's neutral, human, and computer counts.

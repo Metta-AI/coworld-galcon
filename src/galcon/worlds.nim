@@ -60,7 +60,6 @@ proc newWorld*(setup: Setup): World =
     planets: newSeqOfCap[Planet](count),
     orders: newSeqOfCap[Order](MaxBodies),
     rng: initRng(setup.seed),
-    effectsRng: initRng(setup.seed, 0x5041525449434c45'u64),
     winner: -1
   )
   for owner in countdown(setup.players, 0):
@@ -189,27 +188,6 @@ proc send*(world: World, player, source, target, percent: int): int =
   ).int
   world.launch(player, source, target, amount)
 
-proc explode(world: World, x, y, radius: Fixed, count: int) =
-  ## Reuses the original bounded 1024-particle pool and 32-frame fade.
-  for i in 0 ..< count:
-    inc world.effectCursor
-    let
-      slot = world.effectCursor mod MaxEffects
-      angle = fixed(world.effectsRng.between(0, 359)) * FixedPi / 180
-      speed = fixed(world.effectsRng.between(0, 99)) / 100
-      bound = max(1, (radius * 100).toInt)
-      distance = fixed(world.effectsRng.below(bound)) / 100
-      vx = speed * cos(angle)
-      vy = speed * sin(angle)
-    world.effects[slot] = Effect(
-      active: true,
-      x: x + distance * vx * cos(angle),
-      y: y + distance * vy * sin(angle),
-      vx: vx,
-      vy: vy,
-      frame: world.effectsRng.between(-5, 4).int
-    )
-
 proc produce*(world: World) {.measure.} =
   ## Updates neighborhood morale and production before resolving arrivals.
   for p in world.planets.mitems:
@@ -241,19 +219,11 @@ proc produce*(world: World) {.measure.} =
     p.ships = max(0, p.ships + growth)
     inc p.frame
 
-proc advance*(world: World) {.measure.} =
-  ## Runs flocking, effects, production, arrivals, and endings in LD8 order.
+proc advance*(world: World, observer: ArrivalObserver = nil) {.measure.} =
+  ## Runs deterministic gameplay and optionally reports arrivals to a viewer.
   if world.winner >= 0:
     return
   world.moveBodies(world.setup.collisions)
-  profileBlock "effects":
-    for effect in world.effects.mitems:
-      if effect.active:
-        if effect.frame == 32:
-          effect.active = false
-        effect.x += effect.vx
-        effect.y += effect.vy
-        inc effect.frame
   world.produce()
   profileBlock "arrivals":
     for i in 0 ..< MaxBodies:
@@ -269,13 +239,21 @@ proc advance*(world: World) {.measure.} =
       else:
         planet.ships -= stock(1)
         inc world.impacts
-        world.explode(body.x, body.y, FixedOne, 16)
+        let captured = planet.ships < 0
         if planet.ships < 0:
           planet.ships = abs(planet.ships)
           planet.owner = ship.owner
           inc world.revision
           inc world.captures
-          world.explode(planet.x, planet.y, fixed(planet.radius.int32), 512)
+        if observer != nil:
+          observer(Arrival(
+            tick: world.tick,
+            x: body.x, y: body.y,
+            planetX: planet.x, planetY: planet.y,
+            radius: planet.radius,
+            impacts: world.impacts, captures: world.captures,
+            captured: captured
+          ))
       body.active = false
       dec world.activeShips
   var
@@ -335,9 +313,7 @@ proc fingerprint*(world: World): uint64 {.measure.} =
     mix(cast[uint32](int32(value)).uint64)
   mix(world.tick.uint64)
   mix(world.rng.state)
-  mix(world.effectsRng.state)
   mix(world.bodyCursor.uint64)
-  mix(world.effectCursor.uint64)
   mix(world.endWait.uint64)
   mix(cast[uint64](world.winner.int64))
   mix(world.revision.uint64)
@@ -380,11 +356,13 @@ proc fingerprint*(world: World): uint64 {.measure.} =
       if body.kind == ShipBody:
         mix(world.ships[i].owner.uint64)
         mix(world.ships[i].target.uint64)
-  for i, effect in world.effects:
-    if effect.active:
-      mix(i.uint64)
-      mixFixed(effect.x)
-      mixFixed(effect.y)
-      mixFixed(effect.vx)
-      mixFixed(effect.vy)
-      mix(cast[uint64](effect.frame.int64))
+  if world.chatCount > 0:
+    mix(0x43484154'u64)
+    mix(world.chatCount.uint64)
+    for i in 0 ..< world.chatCount:
+      let message = world.chats[(world.chatFirst + i) mod MaxChatLines]
+      mix(message.tick.uint64)
+      mix(message.player.uint64)
+      mix(message.length.uint64)
+      for j in 0 ..< message.length:
+        mix(message.text[j].ord.uint64)
