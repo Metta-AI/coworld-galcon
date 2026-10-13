@@ -7,7 +7,7 @@
   ],
   "game": {
     "name": "Galcon 2006",
-    "description": "Phil Hassey's original 2006 Galcon, ported from Python to Nim. BASIC bots capture textured planets and launch fleets in a deterministic 2D space battle. All credit for the original game and assets belongs to Phil Hassey.",
+    "description": "Phil Hassey's original 2006 Galcon. BASIC bots capture textured planets and launch fleets in a deterministic 2D space battle. All credit for the original game and assets belongs to Phil Hassey. Visit https://galcon.com/.",
     "owner": "treeform",
     "player_runtime": "game-hosted",
     "runnable": {

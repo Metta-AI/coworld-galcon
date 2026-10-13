@@ -102,12 +102,13 @@ proc ring(view: View, center: Vec2, radius: float32, color: ColorRGBX) =
 
 proc text(
     view: View, font, value: string, position: Vec2,
-    color = White, centered = false, shadow = true
+    color = White, centered = false, shadow = true,
+    maxWidth = float32.high
 ) =
   ## Draws transparent glyphs with an optional one-pixel glyph shadow.
   let
     at = view.offset + position
-    width = if centered: Width.float32 else: float32.high
+    width = if centered: Width.float32 else: maxWidth
     alignment = if centered: CenterAlign else: LeftAlign
   if shadow:
     discard view.sk.drawText(
@@ -357,9 +358,9 @@ proc drawGame(view: View) {.measure.} =
     view.line(vec2(a.x, b.y), a, Green)
   if view.controls.hover >= 0:
     let p = world.planets[view.controls.hover]
-    view.text("Hud", "planet: " & p.name & "   production: " & $p.production &
-      "   morale: " & $p.morale & "   ships: " & $p.shipCount,
-      vec2(8, 4), Green)
+    view.text("Hover", p.name & "   Prod: " & $p.production &
+      "   Morale: " & $p.morale & "   Ships: " & $p.shipCount,
+      vec2(8, 4), Green, maxWidth = Width.float32 - 16)
   if view.session.human > 0 and not view.session.inHistory:
     let status =
       "From: " & $selected & " planets   Ships: " & $sending &
@@ -599,6 +600,7 @@ proc runGraphics*(options: Options) =
   builder.addFont(Assets / "zeroes_3.ttf", "Menu", 48)
   builder.addFont(Assets / "zeroes_3.ttf", "Hud", 24)
   builder.addFont(Assets / "zeroes_3.ttf", "Small", 20)
+  builder.addFont(Assets / "zeroes_3.ttf", "Hover", 16)
   builder.addFont(Assets / "zeroes_3.ttf", "Numbers", 14)
   builder.addFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
   builder.addTransportAssets()
