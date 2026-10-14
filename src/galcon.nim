@@ -13,8 +13,15 @@ when defined(coworld):
   type HostedMap = ref object
     planets: int = 26
     difficulty: string = "easy"
-    enemy_ships_pass_through: bool = true
-    neutrals_dont_produce: bool = true
+    enemyShipsPassThrough: bool = true
+    neutralsDontProduce: bool = true
+
+  proc renameHook(map: var HostedMap, key: var string) =
+    ## Maps public configuration keys to their Nim field names.
+    case key
+    of "enemy_ships_pass_through": key = "enemyShipsPassThrough"
+    of "neutrals_dont_produce": key = "neutralsDontProduce"
+    else: discard
 
 proc main*() =
   ## Starts the local Galcon port or a Polyworld Coworld policy match.
@@ -30,8 +37,8 @@ proc main*() =
     let map = readFile(parseUri(getEnv("COGAME_CONFIG_URI")).path.decodeUrl())
       .fromJson(HostedMap)
     options.planetCount = map.planets
-    options.enemyShipsPassThrough = map.enemy_ships_pass_through
-    options.neutralsDontProduce = map.neutrals_dont_produce
+    options.enemyShipsPassThrough = map.enemyShipsPassThrough
+    options.neutralsDontProduce = map.neutralsDontProduce
     case map.difficulty.toLowerAscii()
     of "easy": options.setup.difficulty = Easy
     of "medium": options.setup.difficulty = Medium
