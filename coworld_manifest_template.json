@@ -79,6 +79,16 @@
             "crazy"
           ],
           "default": "easy"
+        },
+        "enemy_ships_pass_through": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enemy fleets pass through one another. Friendly separation and planet collisions remain active."
+        },
+        "neutrals_dont_produce": {
+          "type": "boolean",
+          "default": true,
+          "description": "Neutral planets start with 0 through 100 ships and produce none until captured."
         }
       }
     },
@@ -183,7 +193,9 @@
         "seed": 8,
         "max_ticks": 19200,
         "planets": 26,
-        "difficulty": "easy"
+        "difficulty": "easy",
+        "enemy_ships_pass_through": true,
+        "neutrals_dont_produce": true
       },
       "description": "Original two-player Galcon battle."
     },
@@ -211,7 +223,9 @@
         "seed": 8,
         "max_ticks": 19200,
         "planets": 26,
-        "difficulty": "easy"
+        "difficulty": "easy",
+        "enemy_ships_pass_through": true,
+        "neutrals_dont_produce": true
       },
       "description": "Five-player free-for-all on 26 planets."
     }
@@ -238,7 +252,9 @@
       "seed": 8,
       "max_ticks": 19200,
       "planets": 26,
-      "difficulty": "easy"
+      "difficulty": "easy",
+      "enemy_ships_pass_through": true,
+      "neutrals_dont_produce": true
     },
     "players": [
       {

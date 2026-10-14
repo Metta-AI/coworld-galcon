@@ -105,6 +105,7 @@ type
     players*: int = 2
     collisions*: CollisionKind = Grid16
     placement*: Placement
+    enemyShipsPassThrough*, neutralsDontProduce*: bool
     counts*: seq[int]
   World* = ref object
     setup*: Setup

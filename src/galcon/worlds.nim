@@ -86,7 +86,10 @@ proc newWorld*(setup: Setup): World =
       body: slot,
       x: fixed(result.rng.between(24, Width - 25)),
       y: fixed(result.rng.between(56, Height - 57)),
-      ships: stock(result.rng.between(10, 29).int),
+      ships: stock(result.rng.between(
+        if owner == 0 and setup.neutralsDontProduce: 0 else: 10,
+        if owner == 0 and setup.neutralsDontProduce: 100 else: 29
+      ).int),
       morale: 50,
       frame: result.rng.between(0, TickRate * 23 - 1),
       textureSeed: result.rng.below(int32.high),
@@ -228,7 +231,8 @@ proc produce*(world: World) {.measure.} =
       p.production.int64 * p.morale * FixedScale,
       160_000
     )
-    p.ships = max(0, p.ships + growth)
+    if p.owner != 0 or not world.setup.neutralsDontProduce:
+      p.ships = max(0, p.ships + growth)
     inc p.frame
 
 proc advance*(world: World, observer: ArrivalObserver = nil) {.measure.} =

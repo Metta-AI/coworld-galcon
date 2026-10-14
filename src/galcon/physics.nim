@@ -15,6 +15,10 @@ proc collide(world: World, first, second: int) {.inline.} =
     a = addr world.bodies[first]
     b = addr world.bodies[second]
     radius = a.radius + b.radius
+  if world.setup.enemyShipsPassThrough and
+    a.kind == ShipBody and b.kind == ShipBody and
+    world.ships[first].owner != world.ships[second].owner:
+      return
   var
     dx = b.x - a.x
     dy = b.y - a.y

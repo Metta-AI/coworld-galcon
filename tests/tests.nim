@@ -261,6 +261,8 @@ block:
   let options = parseOptions(@["--headless", "--seed", "77", "--ticks", "1800"])
   options.setup.collisions = AllPairs
   options.setup.placement = ClassicPlacement
+  options.setup.enemyShipsPassThrough = false
+  options.setup.neutralsDontProduce = false
   let
     a = newSession(options)
     b = newSession(options)
@@ -485,10 +487,11 @@ when not defined(headless):
   testTransports()
   testSummaries()
 
-import test_spaces, test_chats, test_effects, test_fairness
+import test_spaces, test_chats, test_effects, test_fairness, test_rules
 testSpaces()
 testChats()
 testEffects()
 testFairness()
+testRules()
 
 echo "All Galcon checks passed"

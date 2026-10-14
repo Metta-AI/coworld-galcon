@@ -14,6 +14,7 @@ type
     frames*: int = 1
     playerCount*: int
     planetCount*: int = 26
+    enemyShipsPassThrough*, neutralsDontProduce*: bool = true
 
 proc setDuration(options: var Options, name, text: string) =
   ## Converts seconds and minutes using Galcon's original 32 Hz tick rate.
@@ -31,12 +32,14 @@ proc clone*(options: Options): Options =
 
 proc matchSetup*(options: Options, difficulty: Difficulty): Setup =
   ## Builds the configured roster and total while retaining original presets.
-  configuredSetup(
+  result = configuredSetup(
     options.game.seed,
     difficulty,
     options.playerCount,
     options.planetCount
   )
+  result.enemyShipsPassThrough = options.enemyShipsPassThrough
+  result.neutralsDontProduce = options.neutralsDontProduce
 
 proc resolveOptions*(options: var Options) =
   ## Validates controller counts and infers the roster from standard flags.
@@ -111,6 +114,14 @@ proc parseOptions*(arguments: seq[string]): Options =
       result.planetCount = parsePositiveInt32(
         arguments.argumentValue(index, argument), argument
       ).int
+    of "--enemy-ships-pass-through", "--neutrals-dont-produce":
+      let text = arguments.argumentValue(index, argument).toLowerAscii()
+      if text notin ["true", "false"]:
+        fail(argument & " must be true or false")
+      if argument == "--enemy-ships-pass-through":
+        result.enemyShipsPassThrough = text == "true"
+      else:
+        result.neutralsDontProduce = text == "true"
     of "--player":
       if index + 1 < arguments.len and
         arguments[index + 1].len > 0 and
@@ -157,6 +168,8 @@ proc parseOptions*(arguments: seq[string]): Options =
       echo "--start --difficulty easy|medium|hard|crazy --tutorial 1|2|3"
       echo "--players N --planets N --player[:SLOT] --bot PATH[:COUNT]"
       echo "--seed N --headless --mute"
+      echo "--enemy-ships-pass-through true|false"
+      echo "--neutrals-dont-produce true|false"
       echo "--ticks N --seconds N --minutes N --record FILE --replay FILE"
       echo "--play true|false --speed N --windowSize WIDTHxHEIGHT"
       echo "--vsync on|off"

@@ -4,7 +4,7 @@ import
   common, worlds, profiles, chats
 
 const
-  ReplayVersion* = 7'u16
+  ReplayVersion* = 8'u16
   MaxTicks* = TickRate * 60 * 30
   MaxOrders* = 1_000_000
 
@@ -48,10 +48,12 @@ type
     hashes: seq[uint64]
     chats: seq[ChatMessage]
     names: seq[string]
-  PlacedRecordingData = object
+  RulesRecordingData = object
     setup: SetupData
     collisions: CollisionKind
     placement: Placement
+    enemyShipsPassThrough: bool
+    neutralsDontProduce: bool
     orders: seq[Order]
     hashes: seq[uint64]
     chats: seq[ChatMessage]
@@ -83,7 +85,7 @@ proc recordTick*(recording: Recording, world: World) {.measure.} =
 proc save*(recording: Recording, path: string) =
   ## Writes a replay using Polyworld's versioned portable file format.
   try:
-    let data = PlacedRecordingData(
+    let data = RulesRecordingData(
       setup: SetupData(
         seed: recording.setup.seed,
         difficulty: recording.setup.difficulty,
@@ -93,6 +95,8 @@ proc save*(recording: Recording, path: string) =
       ),
       collisions: recording.setup.collisions,
       placement: recording.setup.placement,
+      enemyShipsPassThrough: recording.setup.enemyShipsPassThrough,
+      neutralsDontProduce: recording.setup.neutralsDontProduce,
       orders: recording.orders,
       hashes: recording.hashes,
       chats: recording.chats,
@@ -188,7 +192,7 @@ proc loadRecording*(path: string): Recording =
       result.names = data.names
     else:
       let data = decodeReplayFile(
-        "galcon", ReplayVersion, bytes, PlacedRecordingData
+        "galcon", ReplayVersion, bytes, RulesRecordingData
       )
       result.setup = Setup(
         seed: data.setup.seed,
@@ -197,6 +201,8 @@ proc loadRecording*(path: string): Recording =
         players: data.setup.players,
         collisions: data.collisions,
         placement: data.placement,
+        enemyShipsPassThrough: data.enemyShipsPassThrough,
+        neutralsDontProduce: data.neutralsDontProduce,
         counts: data.setup.counts
       )
       result.orders = data.orders

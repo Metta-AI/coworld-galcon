@@ -93,6 +93,6 @@ proc testFairness*() =
   let upgraded = loadRecording(upgradedPath)
   doAssert upgraded.setup.placement == ClassicPlacement
   doAssert upgraded.hashes == old.hashes
-  doAssert readFile(upgradedPath).replayFileHeader().gameVersion == 7
+  doAssert readFile(upgradedPath).replayFileHeader().gameVersion == ReplayVersion
   removeFile(path)
   removeFile(upgradedPath)

@@ -13,6 +13,8 @@ when defined(coworld):
   type HostedMap = ref object
     planets: int = 26
     difficulty: string = "easy"
+    enemy_ships_pass_through: bool = true
+    neutrals_dont_produce: bool = true
 
 proc main*() =
   ## Starts the local Galcon port or a Polyworld Coworld policy match.
@@ -28,6 +30,8 @@ proc main*() =
     let map = readFile(parseUri(getEnv("COGAME_CONFIG_URI")).path.decodeUrl())
       .fromJson(HostedMap)
     options.planetCount = map.planets
+    options.enemyShipsPassThrough = map.enemy_ships_pass_through
+    options.neutralsDontProduce = map.neutrals_dont_produce
     case map.difficulty.toLowerAscii()
     of "easy": options.setup.difficulty = Easy
     of "medium": options.setup.difficulty = Medium
