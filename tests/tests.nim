@@ -7,7 +7,9 @@ import
 
 proc duel(seed = 42'i32): World =
   ## Creates a small deterministic map for focused simulation checks.
-  newWorld(Setup(seed: seed, counts: @[0, 1, 1]))
+  newWorld(Setup(
+    seed: seed, placement: ClassicPlacement, counts: @[0, 1, 1]
+  ))
 
 proc ownerPlanet(world: World, owner: int): int =
   ## Finds a test player's initial home planet.
@@ -258,6 +260,7 @@ echo "Independent BASIC matches and replay reproduce every fixed-state hash"
 block:
   let options = parseOptions(@["--headless", "--seed", "77", "--ticks", "1800"])
   options.setup.collisions = AllPairs
+  options.setup.placement = ClassicPlacement
   let
     a = newSession(options)
     b = newSession(options)
@@ -413,6 +416,7 @@ block:
       hashes: seq[uint64]
   let setup = configuredSetup(8, Easy, 5, 26)
   setup.collisions = AllPairs
+  setup.placement = ClassicPlacement
   let world = newWorld(setup)
   var old = OriginalRecording(setup: OriginalSetup(
     seed: 8, players: 5, counts: @[21, 1, 1, 1, 1, 1]
@@ -481,9 +485,10 @@ when not defined(headless):
   testTransports()
   testSummaries()
 
-import test_spaces, test_chats, test_effects
+import test_spaces, test_chats, test_effects, test_fairness
 testSpaces()
 testChats()
 testEffects()
+testFairness()
 
 echo "All Galcon checks passed"

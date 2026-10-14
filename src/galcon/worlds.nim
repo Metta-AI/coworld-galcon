@@ -62,54 +62,66 @@ proc newWorld*(setup: Setup): World =
     rng: initRng(setup.seed),
     winner: -1
   )
+  let classic = setup.placement == ClassicPlacement or setup.tutorial > 0
+  var starts: seq[tuple[owner: int, home: bool]]
   for owner in countdown(setup.players, 0):
     for i in 0 ..< setup.counts[owner]:
-      let
-        production =
-          if i == 0 and owner > 0: 100
-          else: result.rng.between(1, 100).int
-        slot = result.freeBody()
-        radius = 12 + production * 10 div 100
-      var planet = Planet(
-        owner: owner,
-        production: production,
-        radius: radius,
-        body: slot,
-        x: fixed(result.rng.between(24, Width - 25)),
-        y: fixed(result.rng.between(56, Height - 57)),
-        ships: stock(result.rng.between(10, 29).int),
-        morale: 50,
-        frame: result.rng.between(0, TickRate * 23 - 1),
-        textureSeed: result.rng.below(int32.high),
-        textureKind: result.rng.between(0, 1)
-      )
-      planet.name = result.rng.name()
+      starts.add (owner, i == 0 and owner > 0)
+  if not classic:
+    for i in countdown(starts.high, 1):
+      let j = result.rng.below((i + 1).int32).int
+      swap(starts[i], starts[j])
+  for initial in starts:
+    let
+      owner = initial.owner
+      production =
+        if initial.home: 100
+        else: result.rng.between(1, 100).int
+      slot = result.freeBody()
+      radius = 12 + production * 10 div 100
+    var planet = Planet(
+      owner: owner,
+      production: production,
+      radius: radius,
+      body: slot,
+      x: fixed(result.rng.between(24, Width - 25)),
+      y: fixed(result.rng.between(56, Height - 57)),
+      ships: stock(result.rng.between(10, 29).int),
+      morale: 50,
+      frame: result.rng.between(0, TickRate * 23 - 1),
+      textureSeed: result.rng.below(int32.high),
+      textureKind: result.rng.between(0, 1)
+    )
+    planet.name = result.rng.name()
+    planet.realShips = planet.ships
+    planet.realMorale = 50
+    if initial.home:
+      planet.ships = stock(100)
+      planet.morale = 100
+      if classic and setup.players == 2:
+        planet.x = fixed(if owner == 1: 24 else: Width - 24)
+      elif classic and setup.players > 2:
+        let
+          angle = FixedTau * (owner - 1).int32 / setup.players.int32
+          centerX = fixed((Width div 2).int32)
+          centerY = fixed((Height div 2).int32)
+        planet.x = centerX - cos(angle) * fixed(250)
+        planet.y = centerY - sin(angle) * fixed(155)
+      if setup.tutorial > 0 and owner == 2:
+        planet.ships = stock(25)
+    if not classic:
       planet.realShips = planet.ships
-      planet.realMorale = 50
-      if i == 0 and owner > 0:
-        planet.ships = stock(100)
-        planet.morale = 100
-        if setup.players == 2:
-          planet.x = fixed(if owner == 1: 24 else: Width - 24)
-        elif setup.players > 2:
-          let
-            angle = FixedTau * (owner - 1).int32 / setup.players.int32
-            centerX = fixed((Width div 2).int32)
-            centerY = fixed((Height div 2).int32)
-          planet.x = centerX - cos(angle) * fixed(250)
-          planet.y = centerY - sin(angle) * fixed(155)
-        if setup.tutorial > 0 and owner == 2:
-          planet.ships = stock(25)
-      result.bodies[slot] = Body(
-        active: true,
-        kind: PlanetBody,
-        x: planet.x,
-        y: planet.y,
-        radius: fixed((radius + 9).int32),
-        weight: 100_000,
-        target: -1
-      )
-      result.planets.add planet
+      planet.realMorale = planet.morale
+    result.bodies[slot] = Body(
+      active: true,
+      kind: PlanetBody,
+      x: planet.x,
+      y: planet.y,
+      radius: fixed((radius + 9).int32),
+      weight: 100_000,
+      target: -1
+    )
+    result.planets.add planet
   for i in 0 ..< TickRate:
     for planet in result.planets.mitems:
       let body = addr result.bodies[planet.body]

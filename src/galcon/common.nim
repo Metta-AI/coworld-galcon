@@ -55,6 +55,8 @@ type
   GalconError* = object of CatchableError
   Difficulty* = enum
     Easy, Medium, Hard, Crazy
+  Placement* = enum
+    RandomPlacement, ClassicPlacement
   BodyKind* = enum
     PlanetBody, ShipBody
   CollisionKind* = enum
@@ -102,6 +104,7 @@ type
     tutorial*: int
     players*: int = 2
     collisions*: CollisionKind = Grid16
+    placement*: Placement
     counts*: seq[int]
   World* = ref object
     setup*: Setup
@@ -135,7 +138,9 @@ proc playerName*(owner: int): string {.raises: [].} =
 
 proc defaultSetup*(seed = 8'i32, difficulty = Easy): Setup =
   ## Selects the original difficulty's neutral, human, and computer counts.
-  result = Setup(seed: seed, difficulty: difficulty)
+  result = Setup(
+    seed: seed, difficulty: difficulty, placement: ClassicPlacement
+  )
   case difficulty
   of Easy:
     result.counts = @[24, 1, 1]
@@ -187,7 +192,7 @@ proc roundedRatio*(numerator, denominator: int64): int64 =
 proc configuredSetup*(
     seed: int32, difficulty: Difficulty, players, planets: int
 ): Setup =
-  ## Distributes a requested total across neutral planets and player factions.
+  ## Gives every faction the same starting resources and neutral remainder.
   if players < 1 or players > MaxPlayers:
     raise newException(GalconError, "Players must be 1 through " & $MaxPlayers)
   if planets < max(2, players) or planets > MaxPlanets:
@@ -202,8 +207,9 @@ proc configuredSetup*(
   var remaining = planets - players
   let extras = defaultSetup(seed, difficulty).counts[2] - 1
   for round in 0 ..< extras:
-    for owner in 2 .. players:
-      if remaining > 0:
-        inc result.counts[owner]
-        dec remaining
+    if remaining < players:
+      break
+    for owner in 1 .. players:
+      inc result.counts[owner]
+      dec remaining
   result.counts[0] = remaining

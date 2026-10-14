@@ -4,7 +4,7 @@ import
   common, worlds, profiles, chats
 
 const
-  ReplayVersion* = 6'u16
+  ReplayVersion* = 7'u16
   MaxTicks* = TickRate * 60 * 30
   MaxOrders* = 1_000_000
 
@@ -48,6 +48,14 @@ type
     hashes: seq[uint64]
     chats: seq[ChatMessage]
     names: seq[string]
+  PlacedRecordingData = object
+    setup: SetupData
+    collisions: CollisionKind
+    placement: Placement
+    orders: seq[Order]
+    hashes: seq[uint64]
+    chats: seq[ChatMessage]
+    names: seq[string]
   Recording* = ref object
     setup*: Setup
     orders*: seq[Order]
@@ -75,7 +83,7 @@ proc recordTick*(recording: Recording, world: World) {.measure.} =
 proc save*(recording: Recording, path: string) =
   ## Writes a replay using Polyworld's versioned portable file format.
   try:
-    let data = NamedRecordingData(
+    let data = PlacedRecordingData(
       setup: SetupData(
         seed: recording.setup.seed,
         difficulty: recording.setup.difficulty,
@@ -84,6 +92,7 @@ proc save*(recording: Recording, path: string) =
         counts: recording.setup.counts
       ),
       collisions: recording.setup.collisions,
+      placement: recording.setup.placement,
       orders: recording.orders,
       hashes: recording.hashes,
       chats: recording.chats,
@@ -104,7 +113,7 @@ proc loadRecording*(path: string): Recording =
     let
       bytes = readFile(path)
       header = bytes.replayFileHeader()
-    legacyHashes = header.gameVersion < ReplayVersion
+    legacyHashes = header.gameVersion < 6
     if header.gameVersion == 1:
       let legacy = decodeReplayFile("galcon", 1, bytes, LegacyRecording)
       result.setup = Setup(
@@ -158,10 +167,10 @@ proc loadRecording*(path: string): Recording =
       result.orders = data.orders
       result.hashes = data.hashes
       result.chats = data.chats
-    else:
+    elif header.gameVersion in [5'u16, 6'u16]:
       let data = decodeReplayFile(
         "galcon",
-        if header.gameVersion == 5: 5'u16 else: ReplayVersion,
+        header.gameVersion,
         bytes,
         NamedRecordingData
       )
@@ -177,6 +186,25 @@ proc loadRecording*(path: string): Recording =
       result.hashes = data.hashes
       result.chats = data.chats
       result.names = data.names
+    else:
+      let data = decodeReplayFile(
+        "galcon", ReplayVersion, bytes, PlacedRecordingData
+      )
+      result.setup = Setup(
+        seed: data.setup.seed,
+        difficulty: data.setup.difficulty,
+        tutorial: data.setup.tutorial,
+        players: data.setup.players,
+        collisions: data.collisions,
+        placement: data.placement,
+        counts: data.setup.counts
+      )
+      result.orders = data.orders
+      result.hashes = data.hashes
+      result.chats = data.chats
+      result.names = data.names
+    if header.gameVersion < 7:
+      result.setup.placement = ClassicPlacement
   except IOError, OSError, ReplayError, ValueError, FlattyError, IndexDefect:
     raise newException(
       GalconError,
