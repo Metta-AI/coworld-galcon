@@ -6,7 +6,7 @@ import
 
 type
   Paints* = ref object
-    background*, shader*, atmosphere*, particle*: Image
+    background*, shader*, atmosphere*, particle*, terrain*: Image
     surfaces*: seq[array[MaxPlayers + 1, Image]]
     halos*: seq[array[MaxPlayers + 1, Image]]
 
@@ -59,10 +59,11 @@ proc newPaints*(count: int): Paints =
   ## Loads the original art and initializes bounded per-owner sprite caches.
   try:
     result = Paints(
-      background: readImage(Assets / "bkgr.png"),
+      background: readImage(Assets / "hd" / "background.png"),
       shader: readImage(Assets / "pshader.png"),
-      atmosphere: readImage(Assets / "patmos.png"),
-      particle: readImage(Assets / "part1.png"),
+      atmosphere: readImage(Assets / "hd" / "atmosphere.png"),
+      particle: readImage(Assets / "hd" / "particle.png").resize(20, 20),
+      terrain: readImage(Assets / "hd" / "planet.png"),
       surfaces: newSeq[array[MaxPlayers + 1, Image]](count),
       halos: newSeq[array[MaxPlayers + 1, Image]](count)
     )
@@ -71,17 +72,22 @@ proc newPaints*(count: int): Paints =
       getCurrentExceptionMsg())
 
 proc planetImage*(paints: Paints, planet: Planet, owner: int): Image =
-  ## Composites terrain on opaque RGB before keying the original sphere mask.
+  ## Combines seeded terrain with the HD sphere at four times display density.
   let
     pixels = plasma(planet.textureSeed)
     base = Colors[owner]
     surface = Surfaces[owner]
-  result = newImage(TextureSize, TextureSize)
-  for y in 0 ..< TextureSize:
-    for x in 0 ..< TextureSize:
+    size = (planet.radius * 2 + 1) * ArtScale
+    material = paints.terrain.resize(size, size)
+  result = newImage(size, size)
+  for y in 0 ..< size:
+    for x in 0 ..< size:
       let
-        value = pixels[y * TextureSize + x].int
-        shade = paints.shader[x, y]
+        tx = x * TextureSize div size
+        ty = y * TextureSize div size
+        value = pixels[ty * TextureSize + tx].int
+        shade = paints.shader[tx, ty]
+        detail = material[x, y]
       var rgb: array[3, uint8]
       for channel in 0 ..< 3:
         let tone =
@@ -93,13 +99,24 @@ proc planetImage*(paints: Paints, planet: Planet, owner: int): Image =
               base[channel].int * value div 256
         let overlay = [shade.r, shade.g, shade.b][channel].int
         let lit = tone * (255 - shade.a.int) div 255 + overlay
-        rgb[channel] = min(255, lit).uint8
-      if rgb == [255'u8, 0, 255]:
+        rgb[channel] = min(255,
+          lit * (128 + detail.r.int) div 192).uint8
+      if shade.r == 255 and shade.g == 0 and shade.b == 255:
         result[x, y] = rgbx(0, 0, 0, 0)
       else:
-        result[x, y] = rgbx(rgb[0], rgb[1], rgb[2], 255)
-  let size = planet.radius * 2 + 1
-  result = result.resize(size, size)
+        let
+          dx = x * 2 + 1 - size
+          dy = y * 2 + 1 - size
+          inner = size - 2
+          alpha =
+            if dx * dx + dy * dy < inner * inner: 255
+            else: detail.a.int
+        result[x, y] = rgbx(
+          (rgb[0].int * alpha div 255).uint8,
+          (rgb[1].int * alpha div 255).uint8,
+          (rgb[2].int * alpha div 255).uint8,
+          alpha.uint8
+        )
 
 proc haloImage(paints: Paints, planet: Planet, owner: int): Image =
   ## Tints the original atmospheric glow for additive RGB composition.
@@ -112,8 +129,37 @@ proc haloImage(paints: Paints, planet: Planet, owner: int): Image =
       uint8(color.b.int * tint[2].int shr 8),
       255
     )
-  let size = (planet.radius * 2 + 1) * result.width div TextureSize
+  let size = (planet.radius * 2 + 1) * ArtScale * result.width div
+    (TextureSize * ArtScale)
   result = result.resize(size, size)
+
+proc planetSprite*(
+    paints: Paints, planet: Planet, owner: int, size = PlanetSpriteSize
+): Image =
+  ## Packs an opaque HD planet with an additive halo into one small sprite.
+  let
+    surface = paints.planetImage(planet, owner)
+    halo = paints.haloImage(planet, owner)
+    offset = (size - surface.width) div 2
+    haloOffset = (size - halo.width) div 2
+  doAssert size >= halo.width
+  result = newImage(size, size)
+  for y in 0 ..< result.height:
+    for x in 0 ..< result.width:
+      var glow = rgbx(0, 0, 0, 0)
+      if x >= haloOffset and y >= haloOffset and
+        x < haloOffset + halo.width and y < haloOffset + halo.height:
+          glow = halo[x - haloOffset, y - haloOffset]
+      var pixel = rgbx(0, 0, 0, 0)
+      if x >= offset and y >= offset and
+        x < offset + surface.width and y < offset + surface.height:
+          pixel = surface[x - offset, y - offset]
+      result[x, y] = rgbx(
+        min(255, pixel.r.int + glow.r.int).uint8,
+        min(255, pixel.g.int + glow.g.int).uint8,
+        min(255, pixel.b.int + glow.b.int).uint8,
+        pixel.a
+      )
 
 proc addGlow*(destination, glow: Image, x, y: int) =
   ## Adds atmosphere channels without introducing transparent planet interiors.
@@ -146,8 +192,8 @@ proc boardImage*(paints: Paints, world: World): Image =
     let
       surface = paints.surfaces[i][owner]
       halo = paints.halos[i][owner]
-      x = planet.x.toInt.int
-      y = planet.y.toInt.int
+      x = planet.x.toInt.int * ArtScale
+      y = planet.y.toInt.int * ArtScale
     result.draw(surface, translate(vec2(
       (x - surface.width div 2).float32,
       (y - surface.height div 2).float32

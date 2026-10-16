@@ -8,7 +8,8 @@ import
 proc duel(seed = 42'i32): World =
   ## Creates a small deterministic map for focused simulation checks.
   newWorld(Setup(
-    seed: seed, placement: ClassicPlacement, counts: @[0, 1, 1]
+    seed: seed, placement: ClassicPlacement, counts: @[0, 1, 1],
+    enemyShipsPassThrough: false, neutralsDontProduce: false
   ))
 
 proc ownerPlanet(world: World, owner: int): int =
@@ -252,7 +253,8 @@ block:
       if color notin tones:
         tones.add color
   doAssert tones.len > 30
-  doAssert board.width == Width and board.height == Height
+  doAssert board.width == Width * ArtScale
+  doAssert board.height == Height * ArtScale
   for pixel in board.data:
     doAssert pixel.a == 255
 
@@ -419,6 +421,8 @@ block:
   let setup = configuredSetup(8, Easy, 5, 26)
   setup.collisions = AllPairs
   setup.placement = ClassicPlacement
+  setup.enemyShipsPassThrough = false
+  setup.neutralsDontProduce = false
   let world = newWorld(setup)
   var old = OriginalRecording(setup: OriginalSetup(
     seed: 8, players: 5, counts: @[21, 1, 1, 1, 1, 1]
@@ -467,6 +471,8 @@ block:
       hashes: seq[uint64]
   let setup = defaultSetup()
   setup.collisions = AllPairs
+  setup.enemyShipsPassThrough = false
+  setup.neutralsDontProduce = false
   let world = newWorld(setup)
   var old = OldRecording(setup: OldSetup(seed: 8, counts: [24, 1, 1]))
   for i in 0 ..< 10:
@@ -483,9 +489,10 @@ block:
   removeFile(path)
 
 when not defined(headless):
-  import test_transports, test_summaries
+  import test_transports, test_summaries, test_rasters
   testTransports()
   testSummaries()
+  testRasters()
 
 import test_spaces, test_chats, test_effects, test_fairness, test_rules
 testSpaces()

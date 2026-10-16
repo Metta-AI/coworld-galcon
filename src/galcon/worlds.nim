@@ -37,6 +37,115 @@ proc rebuildNeighbors*(world: World) =
       if i in world.planets[j].neighbors and j notin world.planets[i].neighbors:
         world.planets[i].neighbors.add j
 
+proc arrangeClusters(world: World) =
+  ## Places shuffled factions in cells with equal rings of nearby neutrals.
+  var
+    columns = 1
+    homes: seq[int]
+  while columns * columns < world.setup.players:
+    inc columns
+  let
+    rows = (world.setup.players + columns - 1) div columns
+    cellWidth = Width div columns
+    cellHeight = (Height - 80) div rows
+    ringRadius = min(cellWidth, cellHeight) * 35 div 100
+    perPlayer = world.setup.counts[0] div world.setup.players
+  for i, planet in world.planets:
+    if planet.owner > 0:
+      homes.add i
+  doAssert homes.len == world.setup.players
+  var phases: seq[Fixed]
+  for i, home in homes:
+    let planet = world.planets[home]
+    planet.x = fixed((i mod columns * cellWidth + cellWidth div 2).int32)
+    planet.y = fixed((40 + i div columns * cellHeight +
+      cellHeight div 2).int32)
+    phases.add FixedTau * world.rng.below(360) / 360
+  var neutral = 0
+  for planet in world.planets:
+    if planet.owner == 0:
+      let
+        cluster = neutral div perPlayer
+        home = world.planets[homes[cluster]]
+        angle = phases[cluster] +
+          FixedTau * (neutral mod perPlayer).int32 / perPlayer.int32
+      planet.x = home.x + cos(angle) * fixed(ringRadius.int32)
+      planet.y = home.y + sin(angle) * fixed(ringRadius.int32)
+      inc neutral
+  for planet in world.planets:
+    world.bodies[planet.body].x = planet.x
+    world.bodies[planet.body].y = planet.y
+
+proc placePlanets(world: World) =
+  ## Places random planets with safe passages and a bounded fallback.
+  var complete = true
+  for i, planet in world.planets:
+    var placed = false
+    for attempt in 0 ..< 1024:
+      let
+        x =
+          if attempt == 0:
+            clamp(planet.x.toInt.int,
+              8 + planet.radius, Width - 8 - planet.radius)
+          else: world.rng.between(
+            (8 + planet.radius).int32,
+            (Width - 8 - planet.radius).int32
+          ).int
+        y =
+          if attempt == 0:
+            clamp(planet.y.toInt.int,
+              40 + planet.radius, Height - 40 - planet.radius)
+          else: world.rng.between(
+            (40 + planet.radius).int32,
+            (Height - 40 - planet.radius).int32
+          ).int
+      var clear = true
+      for j in 0 ..< i:
+        let
+          other = world.planets[j]
+          dx = (x - other.x.toInt.int).int64
+          dy = (y - other.y.toInt.int).int64
+          required = (planet.radius + other.radius + PlanetGap).int64
+        if dx * dx + dy * dy < required * required:
+          clear = false
+          break
+      if clear:
+        planet.x = fixed(x.int32)
+        planet.y = fixed(y.int32)
+        placed = true
+        break
+    if not placed:
+      complete = false
+      break
+  if not complete:
+    var largest = 0
+    for planet in world.planets:
+      largest = max(largest, planet.radius)
+    let
+      spacing = largest * 2 + PlanetGap
+      columns = (Width - 16) div spacing
+      rows = (Height - 80) div spacing
+      capacity = columns * rows
+    if capacity < world.planets.len:
+      raise newException(GalconError,
+        "Map cannot fit its planets with safe fleet passages")
+    var cells: array[MaxPlanets * 8, int]
+    doAssert capacity <= cells.len
+    for i in 0 ..< capacity:
+      cells[i] = i
+    for i in countdown(capacity - 1, 1):
+      let j = world.rng.below((i + 1).int32).int
+      swap(cells[i], cells[j])
+    for i, planet in world.planets:
+      let cell = cells[i]
+      planet.x = fixed((8 + (Width - 16 - columns * spacing) div 2 +
+        spacing div 2 + cell mod columns * spacing).int32)
+      planet.y = fixed((40 + (Height - 80 - rows * spacing) div 2 +
+        spacing div 2 + cell div columns * spacing).int32)
+  for planet in world.planets:
+    world.bodies[planet.body].x = planet.x
+    world.bodies[planet.body].y = planet.y
+
 proc newWorld*(setup: Setup): World =
   ## Creates and separates the original map with a portable Polyworld seed.
   if setup.players < 1 or setup.players > MaxPlayers or
@@ -55,6 +164,15 @@ proc newWorld*(setup: Setup): World =
       GalconError,
       "Map must have 2 through " & $MaxPlanets & " planets"
     )
+  if setup.placement == ClusteredPlacement:
+    if setup.counts[0] < setup.players or
+      setup.counts[0] mod setup.players != 0:
+        raise newException(GalconError,
+          "Clustered maps need equal neutral counts around each home")
+    for owner in 1 .. setup.players:
+      if setup.counts[owner] != 1:
+        raise newException(GalconError,
+          "Clustered maps need exactly one home per player")
   result = World(
     setup: setup,
     planets: newSeqOfCap[Planet](count),
@@ -62,7 +180,10 @@ proc newWorld*(setup: Setup): World =
     rng: initRng(setup.seed),
     winner: -1
   )
-  let classic = setup.placement == ClassicPlacement or setup.tutorial > 0
+  let
+    classic = setup.placement == ClassicPlacement or setup.tutorial > 0
+    compact = setup.placement == ClusteredPlacement or
+      count > CompactPlanetThreshold
   var starts: seq[tuple[owner: int, home: bool]]
   for owner in countdown(setup.players, 0):
     for i in 0 ..< setup.counts[owner]:
@@ -78,7 +199,11 @@ proc newWorld*(setup: Setup): World =
         if initial.home: 100
         else: result.rng.between(1, 100).int
       slot = result.freeBody()
-      radius = 12 + production * 10 div 100
+      radius =
+        if compact:
+          6 + production * 5 div 100
+        else:
+          12 + production * 10 div 100
     var planet = Planet(
       owner: owner,
       production: production,
@@ -120,27 +245,33 @@ proc newWorld*(setup: Setup): World =
       kind: PlanetBody,
       x: planet.x,
       y: planet.y,
-      radius: fixed((radius + 9).int32),
+      radius: fixed((radius +
+        (if compact: 3 else: 9)).int32),
       weight: 100_000,
       target: -1
     )
     result.planets.add planet
-  for i in 0 ..< TickRate:
-    for planet in result.planets.mitems:
-      let body = addr result.bodies[planet.body]
-      planet.x = fixed(clamp(
-        body.x.toInt.int,
-        8 + planet.radius,
-        Width - 8 - planet.radius
-      ).int32)
-      planet.y = fixed(clamp(
-        body.y.toInt.int,
-        40 + planet.radius,
-        Height - 40 - planet.radius
-      ).int32)
-      body.x = planet.x
-      body.y = planet.y
-    result.moveBodies()
+  if setup.placement == ClusteredPlacement:
+    result.arrangeClusters()
+  if setup.placement == RandomPlacement and not classic:
+    result.placePlanets()
+  else:
+    for i in 0 ..< TickRate:
+      for planet in result.planets.mitems:
+        let body = addr result.bodies[planet.body]
+        planet.x = fixed(clamp(
+          body.x.toInt.int,
+          8 + planet.radius,
+          Width - 8 - planet.radius
+        ).int32)
+        planet.y = fixed(clamp(
+          body.y.toInt.int,
+          40 + planet.radius,
+          Height - 40 - planet.radius
+        ).int32)
+        body.x = planet.x
+        body.y = planet.y
+      result.moveBodies()
   for planet in result.planets.mitems:
     result.bodies[planet.body].radius = fixed(planet.radius.int32)
   result.rebuildNeighbors()

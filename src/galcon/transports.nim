@@ -2,7 +2,7 @@ import
   std/os,
   chroma, pixie, silky, vmath,
   polyworld/[player, gameuis, chrome],
-  common, sessions
+  common, sessions, rasters
 
 export player, gameuis
 
@@ -27,7 +27,7 @@ type
 proc presentation*(size: Vec2): Presentation =
   ## Fits an unchanged 640 by 480 playfield above the shared replay ribbon.
   result.uiScale = min(size.x / 1360, size.y / 600)
-  result.uiScale = min(max(result.uiScale, 0.01'f), 1.0'f)
+  result.uiScale = max(result.uiScale, 0.01'f)
   let
     logical = size / result.uiScale
     available = vec2(logical.x, max(logical.y - TransportHeight, 1))
@@ -88,7 +88,7 @@ proc addTransportAssets*(builder: AtlasBuilder) =
         name,
         readImage(TransportAssets / (name & ".png"))
       )
-  builder.addFont(TransportAssets / "Rubik-Regular.ttf", "Transport", 15)
+  builder.addRasterFont(TransportAssets / "Rubik-Regular.ttf", "Transport", 15)
 
 proc drawIcon(sk: Silky, panel: GameUiPanel, name: string, active = false) =
   ## Draws the shared Polyworld glyph in its original 64-pixel hit target.
@@ -158,7 +158,7 @@ proc drawTransport*(
     transport.player.seekTo(int32(ratio * transport.player.timelineEnd.float32))
   let caption = "Tick " & $transport.player.tick & " / " &
     $transport.player.timelineEnd
-  discard sk.drawText(
+  discard sk.drawRasterText(
     "Transport", caption, slots.tick.origin, GlyphColor,
     maxWidth = slots.tick.size.x,
     maxHeight = slots.tick.size.y,

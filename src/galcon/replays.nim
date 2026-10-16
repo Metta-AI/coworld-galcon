@@ -4,7 +4,7 @@ import
   common, worlds, profiles, chats
 
 const
-  ReplayVersion* = 8'u16
+  ReplayVersion* = 10'u16
   MaxTicks* = TickRate * 60 * 30
   MaxOrders* = 1_000_000
 
@@ -211,6 +211,8 @@ proc loadRecording*(path: string): Recording =
       result.names = data.names
     if header.gameVersion < 7:
       result.setup.placement = ClassicPlacement
+      result.setup.enemyShipsPassThrough = false
+      result.setup.neutralsDontProduce = false
   except IOError, OSError, ReplayError, ValueError, FlattyError, IndexDefect:
     raise newException(
       GalconError,

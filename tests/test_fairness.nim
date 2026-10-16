@@ -1,10 +1,77 @@
 import
   std/os,
   polyworld/tapes,
-  galcon/[common, worlds, replays]
+  galcon/[common, worlds, replays, options, sessions]
 
 proc testFairness*() =
   ## Checks equal resources, seeded random starts, and old replay verification.
+  echo "Sixteen-player clusters have one home and five nearby neutrals each"
+  let crowded = parseOptions(@[
+    "--headless", "--players", "16", "--neutrals-per-player", "5",
+    "--ticks", "128", "--record", Root / "build" / "clusters.replay"
+  ])
+  let crowdedWorld = newWorld(crowded.setup)
+  doAssert crowdedWorld.planets.len == 96
+  doAssert crowded.setup.placement == ClusteredPlacement
+  doAssert crowded.setup.counts[0] == 80
+  for owner in 1 .. MaxPlayers:
+    var
+      homes = 0
+      nearby = 0
+      home: Planet
+    for planet in crowdedWorld.planets:
+      if planet.owner == owner:
+        inc homes
+        home = planet
+    doAssert homes == 1
+    for planet in crowdedWorld.planets:
+      if planet.owner == 0 and
+        hypot(planet.x - home.x, planet.y - home.y) < fixed(45):
+          inc nearby
+      doAssert planet.radius <= 11
+    doAssert nearby == 5
+  let crowdedSession = newSession(crowded)
+  while not crowdedSession.done:
+    crowdedSession.step()
+  let crowdedReplay = newSession(parseOptions(@[
+    "--headless", "--replay", crowded.game.recordPath
+  ]))
+  crowdedReplay.seek(crowdedSession.world.tick)
+  doAssert crowdedReplay.world.fingerprint() ==
+    crowdedSession.world.fingerprint()
+  removeFile(crowded.game.recordPath)
+  echo "Sixty-nine planets scatter sixteen homes with compact radii"
+  let scattered = parseOptions(@[
+    "--headless", "--players", "16", "--planets", "69"
+  ])
+  doAssert scattered.setup.placement == RandomPlacement
+  doAssert scattered.setup.counts[0] == 53
+  let scatteredWorld = newWorld(scattered.setup)
+  doAssert scatteredWorld.planets.len == 69
+  for owner in 1 .. MaxPlayers:
+    doAssert scattered.setup.counts[owner] == 1
+  for planet in scatteredWorld.planets:
+    doAssert planet.radius <= 11
+  echo "Random maps leave fleet passages between every pair of planet edges"
+  for count in [26, 52, 53, 69, 96, MaxPlanets]:
+    for seed in 0 ..< 32:
+      let setup = configuredSetup(seed.int32, Easy, MaxPlayers, count)
+      let world = newWorld(setup)
+      doAssert world.fingerprint() == newWorld(setup).fingerprint()
+      for i, planet in world.planets:
+        doAssert planet.x >= fixed((8 + planet.radius).int32)
+        doAssert planet.x <= fixed((Width - 8 - planet.radius).int32)
+        doAssert planet.y >= fixed((40 + planet.radius).int32)
+        doAssert planet.y <= fixed((Height - 40 - planet.radius).int32)
+        doAssert world.bodies[planet.body].x == planet.x
+        doAssert world.bodies[planet.body].y == planet.y
+        for j in 0 ..< i:
+          let
+            other = world.planets[j]
+            dx = (planet.x.toInt - other.x.toInt).int64
+            dy = (planet.y.toInt - other.y.toInt).int64
+            distance = (planet.radius + other.radius + PlanetGap).int64
+          doAssert dx * dx + dy * dy >= distance * distance
   echo "Competitive presets give every faction equal planet counts"
   for difficulty in Difficulty:
     for players in [2, 5, MaxPlayers]:
@@ -69,6 +136,8 @@ proc testFairness*() =
       names: seq[string]
   let setup = configuredSetup(8, Easy, 5, 26)
   setup.placement = ClassicPlacement
+  setup.enemyShipsPassThrough = false
+  setup.neutralsDontProduce = false
   let world = newWorld(setup)
   var old = OriginalRecording(
     setup: OriginalSetup(seed: 8, players: 5, counts: setup.counts),

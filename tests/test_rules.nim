@@ -4,6 +4,13 @@ import
 
 proc testRules*() =
   ## Checks switchable fleet contacts, neutral garrisons, and replay rules.
+  echo "Rules B is the default for every setup entry point"
+  for setup in [
+    Setup(), defaultSetup(), configuredSetup(8, Easy, 5, 26),
+    tutorialSetup(8, 1)
+  ]:
+    doAssert setup.enemyShipsPassThrough
+    doAssert setup.neutralsDontProduce
   echo "Enemy fleets pass through while friendly contacts still separate"
   for kind in CollisionKind:
     for enabled in [false, true]:
@@ -44,7 +51,6 @@ proc testRules*() =
   var seen: array[101, bool]
   for seed in 0 ..< 128:
     let setup = configuredSetup(seed.int32, Easy, 5, 26)
-    setup.neutralsDontProduce = true
     let world = newWorld(setup)
     for planet in world.planets:
       if planet.owner == 0:
@@ -88,7 +94,10 @@ proc testRules*() =
   let before = world.planets[neutral].ships
   world.produce()
   doAssert world.planets[neutral].ships > before
-  let original = newWorld(defaultSetup())
+  let originalSetup = defaultSetup()
+  originalSetup.enemyShipsPassThrough = false
+  originalSetup.neutralsDontProduce = false
+  let original = newWorld(originalSetup)
   var originalStocks: seq[int64]
   for planet in original.planets:
     originalStocks.add planet.ships
@@ -106,6 +115,17 @@ proc testRules*() =
   doAssert defaults.setup.neutralsDontProduce
   for passThrough in [false, true]:
     for frozen in [false, true]:
+      for stage in 1 .. 3:
+        let tutorial = parseOptions(@[
+          "--tutorial", $stage,
+          "--enemy-ships-pass-through", $passThrough,
+          "--neutrals-dont-produce", $frozen
+        ])
+        doAssert tutorial.setup.enemyShipsPassThrough == passThrough
+        doAssert tutorial.setup.neutralsDontProduce == frozen
+        let restarted = tutorial.matchSetup(Hard, stage)
+        doAssert restarted.enemyShipsPassThrough == passThrough
+        doAssert restarted.neutralsDontProduce == frozen
       let path = Root / "build" / "rules.replay"
       let options = parseOptions(@[
         "--headless", "--players", "5", "--ticks", "256",

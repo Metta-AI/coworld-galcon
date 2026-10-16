@@ -4,7 +4,7 @@ import
   polyworld/profiles as gameProfiles,
   polyworld/viewers,
   common, controls, textures, options, sessions, transports, chats, effects,
-  summaries
+  summaries, rasters
 
 const
   Green = rgbx(85, 255, 85, 255)
@@ -62,6 +62,8 @@ type
     rosterLabels, rosterValues: array[MaxPlayers + 1, string]
     rosterCounts: array[MaxPlayers + 1, int64]
     rosterWidths: array[MaxPlayers + 1, float32]
+    planetOwners: array[MaxPlanets, int]
+    planetSprites: array[MaxPlanets, string]
     controls: Controls
     screen: Screen
     offset: Vec2
@@ -121,11 +123,11 @@ proc text(
     width = if centered: Width.float32 else: maxWidth
     alignment = if centered: CenterAlign else: LeftAlign
   if shadow:
-    discard view.sk.drawText(
+    discard view.sk.drawRasterText(
       font, value, at + vec2(1, 1), Shadow,
       maxWidth = width, hAlign = alignment, clip = false
     )
-  discard view.sk.drawText(
+  discard view.sk.drawRasterText(
     font, value, at, color,
     maxWidth = width, hAlign = alignment, clip = false
   )
@@ -171,15 +173,22 @@ proc initSounds(view: View) =
     echo "Original audio unavailable: ", error.msg
 
 proc updateBoard(view: View) {.measure.} =
-  ## Replaces the existing atlas board only when planet ownership changes.
+  ## Updates only captured planet sprites instead of repainting the playfield.
   if view.boardRevision == view.session.world.revision:
     return
-  let
-    image = view.paints.boardImage(view.session.world)
-    entry = view.sk.atlas.entries["Board"]
-  view.sk.image.draw(image, translate(vec2(entry.x.float32, entry.y.float32)),
-    OverwriteBlend)
-  view.sk.uploadAtlas()
+  var changed = false
+  for i, planet in view.session.world.planets:
+    if view.planetOwners[i] == planet.owner:
+      continue
+    let image = view.paints.planetSprite(
+      planet, planet.owner,
+      view.sk.atlas.entries[view.planetSprites[i]].width
+    )
+    view.sk.replaceRasterImage(view.planetSprites[i], image)
+    view.planetOwners[i] = planet.owner
+    changed = true
+  if changed:
+    view.sk.finishRasterUpdates()
   view.boardRevision = view.session.world.revision
 
 proc start(view: View, tutorial = 0) =
@@ -189,9 +198,7 @@ proc start(view: View, tutorial = 0) =
     view.session.tickObserver = nil
     view.session.finish()
   var options = view.options.clone()
-  options.setup =
-    if tutorial > 0: tutorialSetup(options.game.seed, tutorial)
-    else: options.matchSetup(view.difficulty)
+  options.setup = options.matchSetup(view.difficulty, tutorial)
   view.session = newSession(options)
   view.card = Card()
   for owner in 1 .. MaxPlayers:
@@ -216,6 +223,22 @@ proc start(view: View, tutorial = 0) =
   view.controls = Controls(player: view.session.human, percent: 50, anchor: -1,
     hover: -1)
   view.paints = newPaints(view.session.world.planets.len)
+  for i, planet in view.session.world.planets:
+    view.planetSprites[i] = "Planet" & $i
+    view.planetOwners[i] = planet.owner
+    let
+      wanted = if planet.radius <= 11: 116 else: PlanetSpriteSize
+      existing = view.sk.atlas.entries.getOrDefault(view.planetSprites[i])
+      size = max(wanted, existing.width)
+      image = view.paints.planetSprite(planet, planet.owner, size)
+    if existing.width < size:
+      if not view.sk.builder.addImage(view.planetSprites[i], image):
+        raise newException(GalconError, "HD planet sprites exceed the atlas")
+    else:
+      let entry = view.sk.atlas.entries[view.planetSprites[i]]
+      view.sk.image.draw(image,
+        translate(vec2(entry.x.float32, entry.y.float32)), OverwriteBlend)
+  view.sk.uploadAtlas()
   view.boardRevision = -1
   view.updateBoard()
   view.screen = if tutorial > 0: TutorialScreen else: GameScreen
@@ -250,7 +273,7 @@ proc returnToMenu(view: View) =
 
 proc drawMenu(view: View) =
   ## Reproduces the original title, menu arrangement, and author credit.
-  view.sk.drawImage("Background", view.offset)
+  view.sk.drawRasterImage("Background", view.offset, vec2(Width, Height))
   view.text("Title", "galcon 2006", vec2(0, 8), Green, centered = true)
   let items = ["tutorial", "play < " & ($view.difficulty).toLowerAscii() &
     " >", "help", "quit"]
@@ -292,10 +315,12 @@ proc drawShips(view: View) =
       if frame > 25: clamp(255 - (frame - 25) * 31, 0, 255).uint8
       else: 255'u8
     let position = effect.position(world.tick)
-    view.sk.drawImage("Particle", view.offset + vec2(
-      position.x.toFloat32 - particle.width.float32 / 2,
-      position.y.toFloat32 - particle.height.float32 / 2
-    ), rgbx(alpha, alpha, alpha, alpha))
+    let size = vec2(particle.width.float32, particle.height.float32) /
+      ArtScale.float32
+    view.sk.drawRasterImage("Particle", view.offset + vec2(
+      position.x.toFloat32 - size.x / 2,
+      position.y.toFloat32 - size.y / 2
+    ), size, rgbx(alpha, alpha, alpha, alpha))
 
 proc playerListBottom(view: View): float32 =
   ## Reserves the compact roster's height for hover information and chat.
@@ -320,11 +345,11 @@ proc drawChat(view: View) =
       value = view.session.displayName(message.player.int) & ": " &
         message.chatText()
       at = view.offset + vec2(10, y)
-    discard view.sk.drawText(
+    discard view.sk.drawRasterText(
       "Chat", value, at + vec2(1, 1), Shadow,
       maxWidth = 320, maxHeight = available, wordWrap = true
     )
-    let size = view.sk.drawText(
+    let size = view.sk.drawRasterText(
       "Chat", value, at, ownerColor(message.player.int),
       maxWidth = 320, maxHeight = available, wordWrap = true
     )
@@ -333,11 +358,11 @@ proc drawChat(view: View) =
     let
       value = "Global: " & view.chatInput & "|"
       at = view.offset + vec2(10, 424)
-    discard view.sk.drawText(
+    discard view.sk.drawRasterText(
       "Chat", value, at + vec2(1, 1), Shadow,
       maxWidth = Width - 20, maxHeight = 20
     )
-    discard view.sk.drawText(
+    discard view.sk.drawRasterText(
       "Chat", value, at, White,
       maxWidth = Width - 20, maxHeight = 20
     )
@@ -358,7 +383,7 @@ proc disc(view: View, center: Vec2, radius: float32, color: ColorRGBX) =
 
 proc fitText(view: View, font, value: string, width: float32): string =
   ## Bounds public player labels without cutting a UTF-8 codepoint.
-  if view.sk.getTextSize(font, value).x <= width:
+  if view.sk.rasterTextSize(font, value).x <= width:
     return value
   result = value
   while result.len > 0:
@@ -366,7 +391,7 @@ proc fitText(view: View, font, value: string, width: float32): string =
     while ending > 0 and (result[ending].ord and 0xc0) == 0x80:
       dec ending
     result.setLen(ending)
-    if view.sk.getTextSize(font, result & "...").x <= width:
+    if view.sk.rasterTextSize(font, result & "...").x <= width:
       return result & "..."
 
 proc cardPanel(
@@ -418,7 +443,7 @@ proc drawPlayers(view: View) =
       view.rosterCounts[owner] != sample.ships[owner]:
         view.rosterCounts[owner] = sample.ships[owner]
         view.rosterValues[owner] = $sample.ships[owner]
-        view.rosterWidths[owner] = view.sk.getTextSize(
+        view.rosterWidths[owner] = view.sk.rasterTextSize(
           "Players", view.rosterValues[owner]
         ).x
     let
@@ -456,7 +481,7 @@ proc drawCard(view: View) =
   view.sk.drawRect(view.offset, vec2(Width, Height), rgbx(0, 0, 0, 48))
   view.cardPanel(view.offset + origin, vec2(568, height))
   let heading = view.fitText("ScoreTitle", title, 528)
-  let headingWidth = view.sk.getTextSize("ScoreTitle", heading).x
+  let headingWidth = view.sk.rasterTextSize("ScoreTitle", heading).x
   view.text("ScoreTitle", heading,
     vec2((Width.float32 - headingWidth) / 2, origin.y + 20), color)
   for owner in 1 .. players:
@@ -465,7 +490,7 @@ proc drawCard(view: View) =
       tint = ownerColor(owner)
       label = view.fitText(font, view.session.displayName(owner), 200)
       value = $sample.ships[owner]
-      valueWidth = view.sk.getTextSize(font, value).x
+      valueWidth = view.sk.rasterTextSize(font, value).x
       endTick =
         if view.summary.eliminated[owner] >= 0:
           min(tick, view.summary.eliminated[owner])
@@ -498,9 +523,19 @@ proc drawCard(view: View) =
 proc drawGame(view: View) {.measure.} =
   ## Paints 2D art, translucent effects, transparent counts, and the LD8 HUD.
   view.updateBoard()
-  view.sk.drawImage("Board", view.offset)
+  view.sk.drawRasterImage("Background", view.offset, vec2(Width, Height))
+  for i, planet in view.session.world.planets:
+    let
+      entry = view.sk.atlas.entries[view.planetSprites[i]]
+      size = vec2(entry.width.float32, entry.height.float32) /
+        ArtScale.float32
+      center = view.offset + vec2(planet.x.toFloat32, planet.y.toFloat32)
+    view.sk.drawRasterImage(view.planetSprites[i], center - size / 2, size)
   view.drawShips()
-  let world = view.session.world
+  let
+    world = view.session.world
+    compact = world.setup.placement == ClusteredPlacement or
+      world.planets.len > CompactPlanetThreshold
   view.controls.clean(world)
   let selectionColor = ownerColor(max(view.session.human, 1))
   var
@@ -528,9 +563,10 @@ proc drawGame(view: View) {.measure.} =
         of 2: planet.morale
         else: planet.shipCount
       let label = $value
-      view.text("Numbers", label,
-        vec2(planet.x.toFloat32 - label.len.float32 * 3.7'f,
-          planet.y.toFloat32 - 8), White)
+      view.text(if compact: "TinyNumbers" else: "Numbers", label,
+        vec2(planet.x.toFloat32 - label.len.float32 *
+          (if compact: 2.4'f else: 3.7'f),
+          planet.y.toFloat32 - (if compact: 5.0'f else: 8.0'f)), White)
   if view.controls.holding and view.controls.box and view.controls.moved:
     let
       a = view.offset + vec2(min(view.controls.startX, view.controls.x).float32,
@@ -742,7 +778,7 @@ proc frame(view: View) =
   case view.screen
   of MenuScreen: view.drawMenu()
   of HelpScreen:
-    view.sk.drawImage("Background", view.offset)
+    view.sk.drawRasterImage("Background", view.offset, vec2(Width, Height))
     view.centeredLines("help", HelpText)
   else: view.drawGame()
   view.sk.popClipRect()
@@ -782,22 +818,23 @@ proc runGraphics*(options: Options) =
   window.makeContextCurrent()
   loadExtensions()
   let
-    builder = newAtlasBuilder(2048, 2)
+    builder = newAtlasBuilder(4096, 8)
     paints = newPaints(MaxPlanets)
   doAssert builder.addImage("Background", paints.background)
-  doAssert builder.addImage("Board", paints.background.copy())
   doAssert builder.addImage("Particle", paints.particle)
-  builder.addFont(Assets / "SAVEDBYZ.TTF", "Title", 80)
-  builder.addFont(Assets / "zeroes_3.ttf", "Menu", 48)
-  builder.addFont(Assets / "zeroes_3.ttf", "Hud", 24)
-  builder.addFont(Assets / "zeroes_3.ttf", "Small", 20)
-  builder.addFont(Assets / "zeroes_3.ttf", "Hover", 16)
-  builder.addFont(Assets / "zeroes_3.ttf", "ScoreTitle", 24)
-  builder.addFont(Assets / "zeroes_3.ttf", "Score", 14)
-  builder.addFont(Assets / "zeroes_3.ttf", "ScoreSmall", 10)
-  builder.addFont(Assets / "zeroes_3.ttf", "Players", 12)
-  builder.addFont(Assets / "zeroes_3.ttf", "Numbers", 14)
-  builder.addFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
+  builder.addRasterFont(Assets / "SAVEDBYZ.TTF", "Title", 80,
+    @["g", "a", "l", "c", "o", "n", " ", "2", "0", "6"])
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Menu", 48)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Hud", 24)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Small", 20)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Hover", 16)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "ScoreTitle", 24)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Score", 14)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "ScoreSmall", 10)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Players", 12)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "Numbers", 14)
+  builder.addRasterFont(Assets / "zeroes_3.ttf", "TinyNumbers", 9)
+  builder.addRasterFont(Assets / "transport" / "Rubik-Regular.ttf", "Chat", 13)
   builder.addTransportAssets()
   let particle = builder.atlas.entries["Particle"]
   for y in 0 ..< paints.particle.height:
@@ -816,6 +853,7 @@ proc runGraphics*(options: Options) =
     selection: 1,
     lastTime: getMonoTime()
   )
+  view.sk.builder = builder
   view.initSounds()
   window.onRune = proc(rune: Rune) =
     ## Appends printable Unicode only while the global chat field is active.

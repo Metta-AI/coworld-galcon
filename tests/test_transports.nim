@@ -6,7 +6,10 @@ import
 proc testTransports*() =
   ## Checks shared transport layout and exact scrubbing of live history.
   echo "Shared transport layout, pause, stepping, speeds, and rewind"
-  for size in [vec2(640, 480), vec2(960, 720), vec2(1920, 1080)]:
+  for size in [
+    vec2(640, 480), vec2(960, 720), vec2(1920, 1080),
+    vec2(3840, 2160), vec2(2160, 3840)
+  ]:
     let
       layout = presentation(size)
       slots = layout.panel.transportPanels()

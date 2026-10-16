@@ -12,6 +12,8 @@ const
   MaxBodies* = 4096
   MaxPlayers* = 16
   MaxPlanets* = 128
+  CompactPlanetThreshold* = 52
+  PlanetGap* = 18
   MaxChatLines* = 16
   MaxChatBytes* = 1024
   ColorNames*: array[MaxPlayers + 1, string] = [
@@ -21,6 +23,8 @@ const
   ]
   MaxGridCells* = ((Width + 15) div 16) * ((Height + 15) div 16)
   TextureSize* = 256
+  ArtScale* = 4
+  PlanetSpriteSize* = 228
   Root* = currentSourcePath().parentDir.parentDir.parentDir
   Assets* =
     when defined(emscripten): "/assets"
@@ -56,7 +60,7 @@ type
   Difficulty* = enum
     Easy, Medium, Hard, Crazy
   Placement* = enum
-    RandomPlacement, ClassicPlacement
+    RandomPlacement, ClassicPlacement, ClusteredPlacement
   BodyKind* = enum
     PlanetBody, ShipBody
   CollisionKind* = enum
@@ -105,7 +109,7 @@ type
     players*: int = 2
     collisions*: CollisionKind = Grid16
     placement*: Placement
-    enemyShipsPassThrough*, neutralsDontProduce*: bool
+    enemyShipsPassThrough*, neutralsDontProduce*: bool = true
     counts*: seq[int]
   World* = ref object
     setup*: Setup

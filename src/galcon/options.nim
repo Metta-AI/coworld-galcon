@@ -14,6 +14,7 @@ type
     frames*: int = 1
     playerCount*: int
     planetCount*: int = 26
+    neutralsPerPlayer*: int
     enemyShipsPassThrough*, neutralsDontProduce*: bool = true
 
 proc setDuration(options: var Options, name, text: string) =
@@ -30,14 +31,27 @@ proc clone*(options: Options): Options =
   result[] = options[]
   result.setup = options.setup.clone()
 
-proc matchSetup*(options: Options, difficulty: Difficulty): Setup =
-  ## Builds the configured roster and total while retaining original presets.
-  result = configuredSetup(
-    options.game.seed,
-    difficulty,
-    options.playerCount,
-    options.planetCount
-  )
+proc matchSetup*(
+    options: Options, difficulty: Difficulty, tutorial = 0
+): Setup =
+  ## Builds a match or tutorial with the selected rule switches.
+  if tutorial > 0:
+    result = tutorialSetup(options.game.seed, tutorial)
+  else:
+    result = configuredSetup(
+      options.game.seed,
+      difficulty,
+      options.playerCount,
+      if options.neutralsPerPlayer > 0:
+        options.playerCount * (options.neutralsPerPlayer + 1)
+      else:
+        options.planetCount
+    )
+    if options.neutralsPerPlayer > 0:
+      result.placement = ClusteredPlacement
+      result.counts[0] = options.playerCount * options.neutralsPerPlayer
+      for owner in 1 .. options.playerCount:
+        result.counts[owner] = 1
   result.enemyShipsPassThrough = options.enemyShipsPassThrough
   result.neutralsDontProduce = options.neutralsDontProduce
 
@@ -55,12 +69,14 @@ proc resolveOptions*(options: var Options) =
       if bots > 0: bots + int(options.game.playerSlot > 0)
       else: max(2, options.game.playerSlot.int)
   if options.setup.tutorial > 0:
-    if options.playerCount != 2 or options.planetCount != 26:
+    if options.playerCount != 2 or options.planetCount != 26 or
+      options.neutralsPerPlayer > 0:
       raise newException(GalconError,
         "Tutorials use their original player and planet counts")
-    options.setup = tutorialSetup(options.game.seed, options.setup.tutorial)
-  else:
-    options.setup = options.matchSetup(options.setup.difficulty)
+  options.setup = options.matchSetup(
+    options.setup.difficulty,
+    options.setup.tutorial
+  )
   if options.game.playerSlot > options.setup.players.int32:
     raise newException(GalconError, "--player is outside the configured roster")
   if options.headless and options.game.playerSlot != 0:
@@ -114,6 +130,12 @@ proc parseOptions*(arguments: seq[string]): Options =
       result.planetCount = parsePositiveInt32(
         arguments.argumentValue(index, argument), argument
       ).int
+    of "--neutrals-per-player":
+      result.neutralsPerPlayer = parsePositiveInt32(
+        arguments.argumentValue(index, argument), argument
+      ).int
+      if result.neutralsPerPlayer >= MaxPlanets:
+        fail("--neutrals-per-player exceeds the planet limit")
     of "--enemy-ships-pass-through", "--neutrals-dont-produce":
       let text = arguments.argumentValue(index, argument).toLowerAscii()
       if text notin ["true", "false"]:
@@ -167,6 +189,7 @@ proc parseOptions*(arguments: seq[string]): Options =
       echo "Galcon 2006 by Phil Hassey, ported to Nim on Polyworld."
       echo "--start --difficulty easy|medium|hard|crazy --tutorial 1|2|3"
       echo "--players N --planets N --player[:SLOT] --bot PATH[:COUNT]"
+      echo "--neutrals-per-player N: one home with N nearby neutrals each"
       echo "--seed N --headless --mute"
       echo "--enemy-ships-pass-through true|false"
       echo "--neutrals-dont-produce true|false"
