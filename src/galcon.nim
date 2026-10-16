@@ -11,7 +11,7 @@ when defined(coworld):
   import galcon/replays
 
   type HostedMap = ref object
-    planets: int = 26
+    planets: int = 69
     difficulty: string = "easy"
     enemyShipsPassThrough: bool = true
     neutralsDontProduce: bool = true

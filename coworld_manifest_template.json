@@ -67,7 +67,7 @@
           "type": "integer",
           "minimum": 2,
           "maximum": 128,
-          "default": 26,
+          "default": 69,
           "description": "Total planets, at least the number of players."
         },
         "difficulty": {
@@ -147,7 +147,7 @@
     "protocols": {
       "player": {
         "type": "text",
-        "value": "Upload raw BASIC source or a ZIP containing one .bas file. One policy owns one faction. selfPlayer() uses IDs 1 through playerCount(); owner 0 is neutral. Planet IDs and mailbox addresses are zero-based. Globals persist between decisions. Each 32 Hz tick restarts the policy with 200,000 instructions, 300,000 work units, 4 MiB memory, and bounded PRINT. Invalid commands return zero. A runtime error disables that policy; syntax errors fail the episode. Identity queries and mailbox sender labels expose colors only."
+        "value": "Upload raw BASIC source or a ZIP containing one .bas file. One policy owns one faction. selfPlayer() uses IDs 1 through playerCount(); owner 0 is neutral. Planet IDs and mailbox addresses are zero-based. Globals persist between decisions. Each 32 Hz tick restarts the policy with a map-scaled compute budget (200,000 instructions and 300,000 work units per ceil(planetCount()^2 / 26^2), so 69 planets allow 1,600,000 instructions and 2,400,000 work units), 4 MiB memory, and bounded PRINT. Invalid commands return zero. A runtime error disables that policy; syntax errors fail the episode. Identity queries and mailbox sender labels expose colors only."
       },
       "global": {
         "type": "text",
@@ -157,7 +157,7 @@
     "docs": {
       "readme": {
         "type": "text",
-        "value": "# Galcon 2006\n\nA Nim port of Phil Hassey's original 2006 Ludum Dare 8 Galcon, which became Galcon Classic. Original design, code, music, fonts, and artwork are credited to Phil Hassey. The original GNU GPL version 2 license is retained. Source: https://github.com/Metta-AI/coworld-galcon. Original: https://www.galcon.com/history/files/473_philhassey.zip.\n\nTwo to sixteen factions compete for two to 128 planets. Each faction starts with a home planet. Neutral planets contain defenders. Production and morale determine how quickly ships grow. Capture every opponent's planets to win. The surviving winner scores 1, every other faction scores 0. Draws and timeouts score 0 for everyone. The default Competition is a five-player free-for-all on 26 planets.\n\n## BASIC policy API\n\nUpload a .bas file or a ZIP with exactly one .bas file. Programs are run by Bassy's native BASIC JIT on supported server targets. Policy variables persist between ticks. Each decision has 200,000 instructions, 300,000 work units, 4 MiB memory, and bounded output. PRINT is private to the owning player.\n\nselfPlayer() identifies your one-based faction. playerCount(), planetCount(), and worldTick() expose match size and time. Planets use zero-based IDs. owner(p) is 0 for neutral and 1 through playerCount() for factions. Queries: ships(p), production(p), morale(p), realMorale(p), realShips(p), x(p), y(p), ready(p), neighborCount(p), and neighbor(p, rank). Neighbors are zero-based ranks. shuffleNeighbors(p) changes your policy's own neighbor order.\n\nlaunch(source, target, count) sends an exact ship count. send(source, target, percent) sends a percentage. Both enforce ownership and available stock and return how many ships were sent. fraction(p, numerator, denominator) truncates a stock fraction. reinforcement(a, b) returns half the friendly strength difference. stronger(a, b) checks the original ten-ship reinforcement threshold.\n\nThe baseline faithfully ports Phil's original neighbor-shuffling attack and reinforcement policy. A simple attack is:\n\n```basic\np = 0\nwhile p < planetCount()\n  if owner(p) = selfPlayer() and ships(p) >= 20 then\n    q = 0\n    while q < planetCount()\n      if owner(q) <> selfPlayer() then\n        sent = send(p, q, 50)\n        q = planetCount()\n      else\n        q = q + 1\n      end if\n    wend\n  end if\n  p = p + 1\nwend\n```\n\n## Global chat and anonymous bot identities\n\nsendChat(-2, text$) broadcasts to every faction, including yourself. pullMailbox$() returns the oldest unread message, or empty text. mailboxId() is -2 for global messages. mailboxCount(), mailboxSelf(), and mailboxPlayers() report inbox size, your zero-based address, and the roster size. Inbox capacity is 100 messages; each faction may send one message per tick. Messages are bounded to 1008 UTF-8 bytes and controls are normalized to spaces. Other channels are ignored.\n\nplayerName$(selfPlayer()) and playerColor$(selfPlayer()) return only your color, such as Red. mailboxName$(mailboxSelf()) uses the mailbox address and also returns a color. Received messages use color-only sender prefixes. Real policy names are viewer metadata, so humans see Red (Andre Bot) in replay chat while bots only see Red.\n\n## Replays\n\nThe shared Polyworld replay bar supports pause, frame stepping, 1x/2x/4x/16x playback, looping, and seeking. The browser runs the same fixed-point game code and verifies recorded gameplay hashes. Particle effects are viewer-only. Game time advances at 32 ticks per second. planets configures the total map size and difficulty selects easy, medium, hard, or crazy. There must be at least as many planets as players.\n\nThis port was generated with Codex. The original game remains Phil Hassey's work.\n"
+        "value": "# Galcon 2006\n\nA Nim port of Phil Hassey's original 2006 Ludum Dare 8 Galcon, which became Galcon Classic. Original design, code, music, fonts, and artwork are credited to Phil Hassey. The original GNU GPL version 2 license is retained. Source: https://github.com/Metta-AI/coworld-galcon. Original: https://www.galcon.com/history/files/473_philhassey.zip.\n\nTwo to sixteen factions compete for two to 128 planets. Each faction starts with a home planet. Neutral planets contain defenders. Production and morale determine how quickly ships grow. Capture every opponent's planets to win. The surviving winner scores 1, every other faction scores 0. Draws and timeouts score 0 for everyone. The default Competition is a sixteen-player free-for-all on 69 planets. Neutral defenders start with 0 through 100 ships and do not grow until captured. Enemy fleets pass through each other. Truce Bot is the default league filler and negotiates through global chat.\n\n## BASIC policy API\n\nUpload a .bas file or a ZIP with exactly one .bas file. Programs are run by Bassy's native BASIC JIT on supported server targets. Policy variables persist between ticks. Each decision has 200,000 instructions and 300,000 work units multiplied by ceil(planetCount()^2 / 26^2), with a minimum multiplier of one. The default 69-planet map allows 1,600,000 instructions and 2,400,000 work units. Memory remains 4 MiB with bounded output. PRINT is private to the owning player.\n\nselfPlayer() identifies your one-based faction. playerCount(), planetCount(), and worldTick() expose match size and time. Planets use zero-based IDs. owner(p) is 0 for neutral and 1 through playerCount() for factions. Queries: ships(p), production(p), morale(p), realMorale(p), realShips(p), x(p), y(p), ready(p), neighborCount(p), and neighbor(p, rank). Neighbors are zero-based ranks. shuffleNeighbors(p) changes your policy's own neighbor order.\n\nlaunch(source, target, count) sends an exact ship count. send(source, target, percent) sends a percentage. Both enforce ownership and available stock and return how many ships were sent. fraction(p, numerator, denominator) truncates a stock fraction. reinforcement(a, b) returns half the friendly strength difference. stronger(a, b) checks the original ten-ship reinforcement threshold.\n\nThe baseline faithfully ports Phil's original neighbor-shuffling attack and reinforcement policy. A simple attack is:\n\n```basic\np = 0\nwhile p < planetCount()\n  if owner(p) = selfPlayer() and ships(p) >= 20 then\n    q = 0\n    while q < planetCount()\n      if owner(q) <> selfPlayer() then\n        sent = send(p, q, 50)\n        q = planetCount()\n      else\n        q = q + 1\n      end if\n    wend\n  end if\n  p = p + 1\nwend\n```\n\n## Global chat and anonymous bot identities\n\nsendChat(-2, text$) broadcasts to every faction, including yourself. pullMailbox$() returns the oldest unread message, or empty text. mailboxId() is -2 for global messages. mailboxCount(), mailboxSelf(), and mailboxPlayers() report inbox size, your zero-based address, and the roster size. Inbox capacity is 100 messages; each faction may send one message per tick. Messages are bounded to 1008 UTF-8 bytes and controls are normalized to spaces. Other channels are ignored.\n\nplayerName$(selfPlayer()) and playerColor$(selfPlayer()) return only your color, such as Red. mailboxName$(mailboxSelf()) uses the mailbox address and also returns a color. Received messages use color-only sender prefixes. Real policy names are viewer metadata, so humans see Red (Andre Bot) in replay chat while bots only see Red.\n\n## Replays\n\nThe shared Polyworld replay bar supports pause, frame stepping, 1x/2x/4x/16x playback, looping, and seeking. The browser runs the same fixed-point game code and verifies recorded gameplay hashes. Particle effects are viewer-only. Game time advances at 32 ticks per second. planets configures the total map size and difficulty selects easy, medium, hard, or crazy. There must be at least as many planets as players.\n\nThis port was generated with Codex. The original game remains Phil Hassey's work.\n"
       }
     }
   },
@@ -175,6 +175,13 @@
       "type": "player",
       "file": "players/chatty.bas",
       "description": "The classic policy with global color-only chat."
+    },
+    {
+      "id": "truce",
+      "name": "Truce Bot",
+      "type": "player",
+      "file": "players/truce.bas",
+      "description": "Negotiates color-only truces in global chat, honors agreements, and retaliates against treaty breakers. Adapted from Veles for sixteen-player games."
     }
   ],
   "variants": [
@@ -205,45 +212,111 @@
       "game_config": {
         "players": [
           {
-            "name": "Classic Bot 1"
+            "name": "Truce Bot 1"
           },
           {
-            "name": "Classic Bot 2"
+            "name": "Truce Bot 2"
           },
           {
-            "name": "Classic Bot 3"
+            "name": "Truce Bot 3"
           },
           {
-            "name": "Classic Bot 4"
+            "name": "Truce Bot 4"
           },
           {
-            "name": "Classic Bot 5"
+            "name": "Truce Bot 5"
+          },
+          {
+            "name": "Truce Bot 6"
+          },
+          {
+            "name": "Truce Bot 7"
+          },
+          {
+            "name": "Truce Bot 8"
+          },
+          {
+            "name": "Truce Bot 9"
+          },
+          {
+            "name": "Truce Bot 10"
+          },
+          {
+            "name": "Truce Bot 11"
+          },
+          {
+            "name": "Truce Bot 12"
+          },
+          {
+            "name": "Truce Bot 13"
+          },
+          {
+            "name": "Truce Bot 14"
+          },
+          {
+            "name": "Truce Bot 15"
+          },
+          {
+            "name": "Truce Bot 16"
           }
         ],
         "seed": 8,
         "max_ticks": 19200,
-        "planets": 26,
+        "planets": 69,
         "difficulty": "easy",
         "enemy_ships_pass_through": true,
         "neutrals_dont_produce": true
       },
-      "description": "Five-player free-for-all on 26 planets."
+      "description": "Sixteen-player free-for-all on 69 randomly placed planets with safe fleet passages."
     }
   ],
   "certification": {
     "game_config": {
       "players": [
         {
-          "name": "Classic Bot 1"
+          "name": "Truce Bot 1"
         },
         {
-          "name": "Classic Bot 2"
+          "name": "Truce Bot 2"
         },
         {
-          "name": "Classic Bot 3"
+          "name": "Truce Bot 3"
         },
         {
-          "name": "Classic Bot 4"
+          "name": "Truce Bot 4"
+        },
+        {
+          "name": "Truce Bot 5"
+        },
+        {
+          "name": "Truce Bot 6"
+        },
+        {
+          "name": "Truce Bot 7"
+        },
+        {
+          "name": "Truce Bot 8"
+        },
+        {
+          "name": "Truce Bot 9"
+        },
+        {
+          "name": "Truce Bot 10"
+        },
+        {
+          "name": "Truce Bot 11"
+        },
+        {
+          "name": "Truce Bot 12"
+        },
+        {
+          "name": "Truce Bot 13"
+        },
+        {
+          "name": "Truce Bot 14"
+        },
+        {
+          "name": "Truce Bot 15"
         },
         {
           "name": "Chatty Bot"
@@ -251,23 +324,56 @@
       ],
       "seed": 8,
       "max_ticks": 19200,
-      "planets": 26,
+      "planets": 69,
       "difficulty": "easy",
       "enemy_ships_pass_through": true,
       "neutrals_dont_produce": true
     },
     "players": [
       {
-        "player_id": "baseline"
+        "player_id": "truce"
       },
       {
-        "player_id": "baseline"
+        "player_id": "truce"
       },
       {
-        "player_id": "baseline"
+        "player_id": "truce"
       },
       {
-        "player_id": "baseline"
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
+      },
+      {
+        "player_id": "truce"
       },
       {
         "player_id": "chatty"

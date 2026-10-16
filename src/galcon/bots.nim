@@ -20,11 +20,13 @@ type
     error*: string
     decisions*: int
 
-proc policyLimits*(): Limits =
-  ## Bounds BASIC memory, code, output, and work for each Galcon decision.
+proc policyLimits*(planets = 26): Limits =
+  ## Scales decision work for quadratic map scans while bounding memory.
+  doAssert planets in 1 .. MaxPlanets
+  let scale = max(1, (planets * planets + 26 * 26 - 1) div (26 * 26))
   result = defaultLimits()
-  result.maxInstructions = 200_000
-  result.maxWorkUnits = 300_000
+  result.maxInstructions = 200_000 * scale.int64
+  result.maxWorkUnits = 300_000 * scale.int64
   result.maxMemoryBytes = 4 * 1024 * 1024
   result.maxSourceBytes = 256 * 1024
   result.maxPrintBytes = 4096
@@ -176,7 +178,7 @@ proc newBrain*(
       neighbors.add index
     result.neighbors.add neighbors
   let
-    limits = policyLimits()
+    limits = policyLimits(world.planets.len)
     host = buildHost(world, result, owner)
   try:
     let program =

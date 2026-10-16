@@ -1,9 +1,24 @@
 import
   std/os,
-  galcon/[common, physics, worlds, options, sessions]
+  galcon/[common, physics, worlds, options, sessions, bots]
 
 proc testRules*() =
   ## Checks switchable fleet contacts, neutral garrisons, and replay rules.
+  echo "Large maps allow existing full distance-table policy startup"
+  let startup = newBrain(newWorld(configuredSetup(42, Easy, 16, 69)), 1,
+    "dim distances(16383)\n" &
+    "a = 0\nwhile a < planetCount()\n" &
+    "b = 0\nwhile b < planetCount()\n" &
+    "dx = x(a) - x(b)\ndy = y(a) - y(b)\n" &
+    "distance = dx * dx + dy * dy\nlo = 0\nhi = 1024\n" &
+    "while lo < hi\nmid = (lo + hi) \\ 2\n" &
+    "if mid * mid < distance then\nlo = mid + 1\n" &
+    "else\nhi = mid\nend if\nwend\n" &
+    "distances(a * 128 + b) = lo\nb = b + 1\nwend\n" &
+    "a = a + 1\nwend\n")
+  startup.decide()
+  doAssert not startup.failed
+  doAssert startup.decisions == 1
   echo "Rules B is the default for every setup entry point"
   for setup in [
     Setup(), defaultSetup(), configuredSetup(8, Easy, 5, 26),
