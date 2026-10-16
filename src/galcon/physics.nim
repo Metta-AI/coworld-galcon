@@ -2,11 +2,13 @@ import common, profiles, spaces
 
 proc freeBody*(world: World): int =
   ## Finds a free slot in the original bounded flocking pool.
+  let cursor = world.bodyCursor
   for i in 0 ..< MaxBodies:
     let slot = world.bodyCursor mod MaxBodies
     inc world.bodyCursor
     if not world.bodies[slot].active:
       return slot
+  world.bodyCursor = cursor
   -1
 
 proc collide(world: World, first, second: int) {.inline.} =

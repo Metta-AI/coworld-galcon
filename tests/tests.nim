@@ -335,10 +335,17 @@ block:
   let world = duel()
   let source = world.ownerPlanet(1)
   world.planets[source].ships = stock(MaxBodies + 100)
+  let playback = world.clone()
   doAssert world.launch(1, source, world.ownerPlanet(2), MaxBodies + 100) ==
     MaxBodies - world.planets.len
+  doAssert playback.launch(1, source, playback.ownerPlanet(2),
+    MaxBodies - world.planets.len) == MaxBodies - world.planets.len
+  doAssert world.fingerprint() == playback.fingerprint()
   doAssert world.activeShips == MaxBodies - world.planets.len
+  let full = world.fingerprint()
   doAssert world.freeBody() == -1
+  doAssert world.launch(1, source, world.ownerPlanet(2), 50) == 0
+  doAssert world.fingerprint() == full
 
 echo "Live rewind preserves BASIC variables, RNG, and pending human commands"
 block:

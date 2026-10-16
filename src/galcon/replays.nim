@@ -4,7 +4,7 @@ import
   common, worlds, profiles, chats
 
 const
-  ReplayVersion* = 10'u16
+  ReplayVersion* = 11'u16
   MaxTicks* = TickRate * 60 * 30
   MaxOrders* = 1_000_000
 
