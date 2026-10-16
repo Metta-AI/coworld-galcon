@@ -274,7 +274,7 @@
     "game_config": {
       "players": [
         {
-          "name": "Truce Bot 1"
+          "name": "Classic Bot"
         },
         {
           "name": "Truce Bot 2"
@@ -331,7 +331,7 @@
     },
     "players": [
       {
-        "player_id": "truce"
+        "player_id": "baseline"
       },
       {
         "player_id": "truce"
