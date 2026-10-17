@@ -26,7 +26,13 @@ def package(files: dict[str, bytes], compression: int) -> bytes:
 
 
 def episode(
-    binary: Path, root: Path, name: str, candidate: bytes, rejected: bool
+    binary: Path,
+    root: Path,
+    name: str,
+    candidate: bytes,
+    rejected: bool,
+    error: str = "Uncompressed data exceeds output limit",
+    runtime_fault: bool = False,
 ) -> None:
     directory = root / name
     directory.mkdir()
@@ -82,8 +88,11 @@ def episode(
             [str(binary)], cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT
         )
         try:
-            marker = directory / ("failure.json" if rejected else "results.json")
-            unexpected = directory / ("results.json" if rejected else "failure.json")
+            load_rejected = rejected and not runtime_fault
+            marker = directory / ("failure.json" if load_rejected else "results.json")
+            unexpected = directory / (
+                "results.json" if load_rejected else "failure.json"
+            )
             while not marker.exists():
                 assert not unexpected.exists(), (
                     f"{name}: unexpected outcome: {unexpected.read_text()}"
@@ -95,12 +104,14 @@ def episode(
             assert [status["slot"] for status in statuses] == [0, 1]
             outcome = json.loads(marker.read_text())
             if rejected:
-                assert outcome["failed_policy_index"] == 0
+                if runtime_fault:
+                    assert len(outcome["scores"]) == 2
+                    assert statuses[1]["exit_code"] == 0
+                    assert (directory / "replay").stat().st_size > 0
+                else:
+                    assert outcome["failed_policy_index"] == 0
                 assert statuses[0]["exit_code"] != 0
-                assert (
-                    "Uncompressed data exceeds output limit"
-                    in (directory / "player-0.log").read_text()
-                )
+                assert error in (directory / "player-0.log").read_text()
                 assert not unexpected.exists()
             else:
                 assert len(outcome["scores"]) == 2
@@ -182,3 +193,30 @@ if __name__ == "__main__":
     for offset in [local + 22, central + 24]:
         struct.pack_into("<I", forged, offset, 0)
     episode(binary, evidence, "false-size-limit", bytes(forged), True)
+
+    for name, source, error, runtime_fault in [
+        (
+            "instruction-limit",
+            b"while 1\na = 1\nwend\n",
+            "BASIC instruction limit exceeded",
+            True,
+        ),
+        (
+            "source-limit",
+            b"'" + b"x" * (256 * 1024) + b"\n",
+            "BASIC source exceeds the configured byte limit",
+            False,
+        ),
+        ("memory-limit", b"dim a(2000000)\n", "memory limit", False),
+    ]:
+        episode(binary, evidence, name, source, True, error, runtime_fault)
+    episode(
+        binary,
+        evidence,
+        "package-traversal",
+        package(
+            {"policy.bas": baseline, "../outside": b"forbidden"}, zipfile.ZIP_DEFLATED
+        ),
+        True,
+        "Invalid package resource path",
+    )
