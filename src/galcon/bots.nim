@@ -188,8 +188,11 @@ proc newBrain*(
         compile(source, host, limits)
     result.runtime = initRuntime(program, host, limits)
   except BasicError as error:
-    raise newException(GalconError, "Cannot compile BASIC policy " &
-      $owner & ": " & error.msg)
+    when defined(coworld):
+      rejectPlayer(owner - 1, error.msg)
+    else:
+      raise newException(GalconError, "Cannot compile BASIC policy " &
+        $owner & ": " & error.msg)
 
 proc readSource*(path: string): string =
   ## Loads raw BASIC or a Polyworld policy package with bounded reads.

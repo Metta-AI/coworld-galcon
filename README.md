@@ -94,7 +94,10 @@ python3 tests/test_coworld_packages.py build/galcon-coworld build/package-eviden
 The evidence directory must be new. The check retains all inputs, private logs,
 statuses, results, and replays. It runs ordinary Duel games for valid stored and
 deflated ZIPs, and verifies player-attributed rejection of oversized packages,
-including archives with false size metadata.
+including archives with false size metadata. It also rejects traversal paths,
+oversized source, and VM initialization memory exhaustion through the player
+failure protocol. Instruction exhaustion disables only the offending player;
+the other player completes the game and both statuses remain attributable.
 
 ```sh
 ./build/galcon --headless --bot players/classic.bas:2 --seed 77 \
