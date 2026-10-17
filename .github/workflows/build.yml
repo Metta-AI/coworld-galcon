@@ -37,3 +37,14 @@ jobs:
           nim r -d:release -d:fixedChecks -d:nimTypeNames tests/tests.nim
       - name: Build the local game
         run: nim c -d:release --out:build/galcon src/galcon.nim
+      - name: Test native Coworld policy packages
+        if: runner.os == 'Linux'
+        run: |
+          nim c -d:release -d:coworld --out:build/galcon-coworld src/galcon.nim
+          python3 tests/test_coworld_packages.py build/galcon-coworld build/package-evidence
+      - name: Retain native Coworld package evidence
+        if: always() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coworld-package-evidence
+          path: build/package-evidence
