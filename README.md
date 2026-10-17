@@ -80,6 +80,22 @@ friendly strength difference, and `stronger(source, target)` checks the
 original ten-ship reinforcement threshold. Raw BASIC and Polyworld policy
 packages are accepted by `--bot`.
 
+Policy uploads are limited to 16 MiB and 256 files. Decoded source, resources,
+resource names, and package accounting overhead share a 64 MiB limit enforced
+during decompression. These package limits are separate from the BASIC VM's
+256 KiB source and 4 MiB runtime-memory limits.
+
+To check the native Coworld package handoff, build with `-d:coworld`, then run:
+
+```sh
+python3 tests/test_coworld_packages.py build/galcon-coworld build/package-evidence
+```
+
+The evidence directory must be new. The check retains all inputs, private logs,
+statuses, results, and replays. It runs ordinary Duel games for valid stored and
+deflated ZIPs, and verifies player-attributed rejection of oversized packages,
+including archives with false size metadata.
+
 ```sh
 ./build/galcon --headless --bot players/classic.bas:2 --seed 77 \
   --seconds 60 --record build/match.replay
